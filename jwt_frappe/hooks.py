@@ -8,7 +8,7 @@ app_publisher = "ahmadragheb"
 app_description = "auth with token for mobile and frontend applications "
 app_icon = "octicon octicon-file-directory"
 app_color = "pink"
-app_email = "Ahmedragheb75@gmail.com"
+app_email = "Socialangel@gmail.com"
 app_license = "MIT"
 
 
