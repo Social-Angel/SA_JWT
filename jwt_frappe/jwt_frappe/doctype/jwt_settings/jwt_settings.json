@@ -5,22 +5,35 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "jwt_expiry_time"
+  "jwt_access_expiry_time",
+  "column_break_bcys",
+  "jwt_refresh_expiry_time"
  ],
  "fields": [
   {
    "default": "60",
    "description": "In Second",
-   "fieldname": "jwt_expiry_time",
+   "fieldname": "jwt_access_expiry_time",
    "fieldtype": "Int",
-   "label": "JWT Expiry Time"
+   "label": "JWT Access Expiry Time"
+  },
+  {
+   "fieldname": "column_break_bcys",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "60",
+   "description": "In Second",
+   "fieldname": "jwt_refresh_expiry_time",
+   "fieldtype": "Int",
+   "label": "JWT Refresh Expiry Time"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-06-13 13:58:29.156243",
+ "modified": "2025-06-13 22:10:43.527197",
  "modified_by": "Administrator",
  "module": "Jwt Frappe",
  "name": "JWT Settings",
