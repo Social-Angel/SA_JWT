@@ -25,16 +25,23 @@ def generate_jwt_token(user, expires_in=60):
 
 
 @frappe.whitelist(allow_guest=True)
-def decode_jwt_token(token, secret_key="your_secret_here"):
+def decode_jwt_token(token, token_type , secret_key="your_secret_here"):
     try:
         if not token:
             return {"success": False, "message": "Token is required"}
         
         access_token = frappe.get_doc("OAuth Bearer Token", token)
+        
         if not access_token:
             return {"success": False, "message": "Token not found"}
-        
-        decoded = jwt.decode(access_token.jwt_access_token, secret_key, algorithms=["HS256"])
+        if token_type == "refresh_token":
+            decoded = jwt.decode(access_token.jwt_refresh_token, secret_key, algorithms=["HS256"])
+        elif token_type == "access_token":
+            decoded = jwt.decode(access_token.jwt_access_token, secret_key, algorithms=["HS256"])
+        else:
+            return {
+                {"success": False, "message": "Token Type Is Wrong"}
+            }
         return {
             "success": True,
             "data": decoded

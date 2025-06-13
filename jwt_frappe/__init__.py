@@ -45,8 +45,7 @@ def on_session_creation(login_manager):
     # Set user details in response
 
     frappe.local.response['user'] = {
-      "username": login_manager.user,
-      "fullname": frappe.db.get_value("User", login_manager.user, "full_name"),
+      "full_name": frappe.db.get_value("User", login_manager.user, "full_name"),
       "email": frappe.db.get_value("User", login_manager.user, "email"),
       "phone": frappe.db.get_value("User", login_manager.user, "phone"),
       "user_image": frappe.db.get_value("User", login_manager.user, "user_image")
