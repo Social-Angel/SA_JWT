@@ -30,9 +30,9 @@ def decode_jwt_token(token, token_type , secret_key="your_secret_here"):
         if not token:
             return {"success": False, "message": "Token is required"}
         
-        access_token = frappe.get_doc("OAuth Bearer Token", token)
-        
-        if not access_token:
+        try:
+            access_token = frappe.get_doc("OAuth Bearer Token", token)
+        except frappe.DoesNotExistError:
             return {"success": False, "message": "Token not found"}
         if token_type == "refresh_token":
             decoded = jwt.decode(access_token.jwt_refresh_token, secret_key, algorithms=["HS256"])

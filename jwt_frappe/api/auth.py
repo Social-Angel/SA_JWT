@@ -15,13 +15,18 @@ def refresh_token():
     :param refresh_token: The refresh token to use for refreshing the JWT token
     """
     try:
-        token = (frappe.request.headers.get("Authorization").replace("Bearer ", "").strip())
+        token = frappe.form_dict.get("token")
+        # token = (frappe.request.headers.get("Authorization").replace("Bearer ", "").strip())
+
         if not token:
             frappe.response["http_status_code"] = 401
             return {"message": "Unauthorized access. Token is missing."}
             
         JWT_Data = decode_jwt_token(token, token_type="refresh_token")
-
+        print("JWT_Data", JWT_Data)
+        if JWT_Data.get("success") is False and JWT_Data.get("message") == "Token not found":
+            frappe.response["http_status_code"] = 401
+            return {"message": JWT_Data.get("message", "Unauthorized access. Token not found")}
         if JWT_Data.get("success") is True:
             jwt_access_expiry_time = frappe.db.get_single_value("JWT Settings", "jwt_access_expiry_time")
             jwt_refresh_expiry_time = frappe.db.get_single_value("JWT Settings", "jwt_refresh_expiry_time")
@@ -34,6 +39,8 @@ def refresh_token():
                 return {"message": "Unauthorized access. Token not found."}
             # Update the token document with new access token and expiry
             frappe.db.set_value("OAuth Bearer Token", token_doc.name, "jwt_access_token", jwt_access_token)
+            frappe.db.set_value("OAuth Bearer Token", token_doc.name, "jwt_access_token", jwt_access_token)
+
             frappe.db.commit() 
             # token_doc.add_comment("Comment", text="Access token refreshed")
 
@@ -50,7 +57,7 @@ def refresh_token():
         if JWT_Data.get("message") == "Token has expired":
             frappe.response["http_status_code"] = 401
             return {
-                "message": "Unauthorized access. Token has expired.",
+                "message": "Unauthorized access.Refresh Token has expired.",
             }
         if JWT_Data.get("message") == "Invalid token":
             frappe.response["http_status_code"] = 401
