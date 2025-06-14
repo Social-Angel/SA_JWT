@@ -1,0 +1,25 @@
+{
+ "custom_fields": [
+  {
+   "fieldname": "jwt_access_token",
+   "label": "JWT Access Token",
+   "fieldtype": "Small Text",
+   "insert_after": "access_token",
+   "in_list_view": 1,
+   "dt": "OAuth Bearer Token"
+  },
+  {
+   "fieldname": "jwt_refresh_token",
+   "label": "JWT Refresh Token",
+   "fieldtype": "Small Text",
+   "insert_after": "refresh_token",
+   "in_list_view": 1,
+   "dt": "OAuth Bearer Token"
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "OAuth Bearer Token",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}
