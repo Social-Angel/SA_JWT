@@ -8,6 +8,25 @@ from jwt_frappe.utils.jwt_auth import generate_jwt_token
 from jwt_frappe.utils.jwt_auth import decode_jwt_token
 from frappe.utils import cint
 import requests, re
+import frappe, random
+from datetime import timedelta
+
+# <---------------- Separate function ---------------->
+
+def generateOTP(digit):
+    """
+    Generates a random OTP of the specified digit length.
+    """
+    try:
+        digits = "0123456789"
+        return "".join(random.choice(digits) for _ in range(digit))
+    except Exception as e:
+        frappe.response.http_status_code = 500
+        frappe.log_error(
+            message=f"Error generating OTP: {e}", 
+            title="OTP Generation Error"
+        )
+        return ""
 
 
 @frappe.whitelist(allow_guest=True)
@@ -97,7 +116,7 @@ def refresh_token():
                 frappe.response["http_status_code"] = 401
                 return {"message": "Unauthorized access. Token not found."}
             # Update the token document with new access token and expiry
-            expiration_time = frappe.utils.now_datetime() + frappe.utils.timedelta(
+            expiration_time = frappe.utils.now_datetime() + timedelta(
                 seconds=jwt_access_expiry_time
             )
             frappe.db.set_value(
@@ -130,11 +149,14 @@ def refresh_token():
         if JWT_Data.get("message") == "Token has expired":
             frappe.response["http_status_code"] = 401
             return {
+                "success": False,
+                "refresh_token_expired": True,
                 "message": "Unauthorized access.Refresh Token has expired.",
             }
         if JWT_Data.get("message") == "Invalid token":
             frappe.response["http_status_code"] = 401
             return {
+                "success": False,
                 "message": "Unauthorized access. Invalid token.",
             }
 
@@ -174,26 +196,10 @@ def logout_jwt():
 
 @frappe.whitelist(allow_guest=True)
 
-# def generate_mobile_otp():
-#     """
-#     Generate a mobile OTP for the user
-#     """
-#     try:
 
-
-#     except Exception as e:
-#         frappe.log_error(frappe.get_traceback(), "JWT Generate Mobile OTP Error")
-#         frappe.throw(_("Failed to generate mobile OTP"))
-def validate_phone_number(phone):
-        # Add your phone number validation logic here
-        if not re.match(r"^\+?[1-9]\d{1,14}$", phone):  # Example: E.164 format
-            raise frappe.exceptions.InvalidPhoneNumberError(
-                f"Phone Number {phone} set in field mobile_no is not valid."
-            )
-        return phone
 
 @frappe.whitelist(allow_guest=True)
-def create_website_user(email, full_name, password, number):
+def create_website_user(email, full_name, password):
     """
     Creates a Website User with the given details if the email is unique and number_verified is not True.
     """
@@ -232,8 +238,7 @@ def create_website_user(email, full_name, password, number):
                     "doctype": "Website User",
                     "email": email,
                     "full_name": full_name,
-                    "mobile_no": number,
-                    "password": password,  # Ensure password is set
+                    "password": password,  
                 }
             )
             user_doc.insert(ignore_permissions=True)
@@ -254,3 +259,83 @@ def create_website_user(email, full_name, password, number):
         )
         frappe.response.http_status_code = 500
         return {"success": False, "message": "Failed to create Website User."}
+
+
+
+@frappe.whitelist(allow_guest=True)
+def send_sms_otp(number,website_user):
+    """
+    Sends the generated OTP to the given phone number using the SMS service.
+    """
+    from requests import RequestException
+    try:
+        
+        otp = generateOTP(4)
+        if not number:
+            frappe.response.http_status_code = 400
+            return {"success": False, "message": "Phone number is required."}
+
+        ss = frappe.get_doc("SMS Settings", "SMS Settings")
+        if not ss.sms_gateway_url:
+            frappe.response.http_status_code = 500
+            return {"success": False, "message": "SMS Gateway URL is not configured"}   
+             
+        message = f"Hi Your OTP for SocialAngel is {otp}. Please do not share this with anyone. Regards SocialAngel"
+        encoded_message = requests.utils.quote(message)
+        
+        args = {"message": encoded_message}
+        for d in ss.get("parameters"):
+            args[d.parameter] = d.value
+        
+        args["mobile"] = number
+        
+        query_string = "&".join(f"{key}={value}" for key, value in args.items())
+        url = f"{ss.sms_gateway_url}?{query_string}"
+        response = requests.get(url)
+        response_text = response.text
+        
+        if response.status_code == 200 and "SUBMIT_SUCCESS" in response_text:
+            frappe.get_doc({
+                "doctype": "SMS OTP",
+                "number": number,
+                "website_user": website_user,
+                "otp": otp,
+                "status": "Sent"
+            }).insert(ignore_permissions=True)
+
+            if frappe.db.exists("Website User", website_user):
+                user_doc = frappe.get_doc("Website User", website_user)
+                user_doc.mobile_empts += 1 
+                user_doc.last_otp_sent = frappe.utils.now_datetime()
+                user_doc.save(ignore_permissions=True)
+                
+            frappe.db.commit()
+            frappe.local.response.http_status_code = 200
+
+            # update website user Attempt and timestamp
+            return f"OTP sent to {number}"
+        
+        else:
+            frappe.log_error(
+                message=f"SMS sending failed. Response: {response_text}. Phone: {number}",
+                title="SMS OTP Error"
+            )
+            frappe.response.http_status_code = 500
+            return "Failed to send OTP. Please try again."
+    
+    except RequestException as re:
+        frappe.log_error(
+            message=f"Request error during SMS OTP send: {re}. Phone: {number}",
+            title="SMS OTP Error"
+        )
+        frappe.response.http_status_code = 500
+        return "Failed to send OTP due to a network error. Please try again later."
+
+    except Exception as e:
+        frappe.log_error(
+            message=f"Unexpected error during SMS OTP send: {e}. Phone: {number}",
+            title="SMS OTP Error"
+        )
+        frappe.response.http_status_code = 500
+        return {"message": "An unexpected error occurred while sending OTP. Please try again later."}
+    
