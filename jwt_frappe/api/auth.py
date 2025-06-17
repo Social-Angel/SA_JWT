@@ -10,8 +10,11 @@ from frappe.utils import cint
 import requests, re
 import frappe, random
 from datetime import timedelta
+from frappe.utils import get_url, random_string, now_datetime, add_to_date
+from requests import RequestException
 
 # <---------------- Separate function ---------------->
+
 
 def generateOTP(digit):
     """
@@ -23,44 +26,234 @@ def generateOTP(digit):
     except Exception as e:
         frappe.response.http_status_code = 500
         frappe.log_error(
-            message=f"Error generating OTP: {e}", 
-            title="OTP Generation Error"
+            message=f"Error generating OTP: {e}", title="OTP Generation Error"
         )
         return ""
+
+
+# <---------------- Creating Real Frappe User (This is not a API Depend on verify_sms_otp_login )  ---------------->
+
+
+def register_real_user(full_name, email, password, phone_number):
+    """
+    Registers a new user. If the user already exists, appropriate error messages are returned.
+    """
+    try:
+        if not email:
+            frappe.response["http_status_code"] = 400
+            return "Email is required"
+        if not password:
+            frappe.response["http_status_code"] = 400
+            return "Password is required"
+        if not phone_number:
+            frappe.response["http_status_code"] = 400
+            return "Phone number is required"
+        if not re.match(r"^\+?[0-9]{10,15}$", phone_number):
+            frappe.response["http_status_code"] = 400
+            return "Invalid phone number format"
+        if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
+            frappe.response["http_status_code"] = 400
+            return "Invalid email address format"
+
+        user = frappe.db.get_value("User", email, fieldname=["name"])
+        if user:
+            frappe.response["http_status_code"] = 409
+            return "This email is already registered"
+
+        users_count_with_same_phone = frappe.db.count("User", {"phone": phone_number})
+        if users_count_with_same_phone > 5:
+            frappe.response["http_status_code"] = 409
+            return "This phone number exceeds the limit of users registered with it."
+
+        full_name = full_name.split()
+        first_name_part = full_name[0]
+        last_name_part = " ".join(full_name[1:]) if len(full_name) > 1 else ""
+        user_doc = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": first_name_part,
+                "last_name": last_name_part,
+                "phone": phone_number,
+                "send_welcome_email": 1,
+                "new_password": password,
+                "number_verified": 1,
+            }
+        )
+        try:
+            user_doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+            frappe.response["http_status_code"] = 201
+            return {
+                "success": True,
+                "message": "User created successfully",
+                "user_doc": {
+                    "name": user_doc.name,
+                    "email": user_doc.email,
+                    "phone": user_doc.phone,
+                },
+            }
+        except frappe.ValidationError as e:
+            if "Failed to decrypt key" in str(e):
+                frappe.log_error(
+                    message=f"Encryption error while sending welcome email: {e}",
+                    title="Email Encryption Issue",
+                )
+                frappe.response["http_status_code"] = 206
+                return {
+                    "success": True,
+                    "message": f"User created successfully, but failed to send welcome email: {e}",
+                }
+            else:
+                frappe.log_error(
+                    message=f"Validation error during user creation: {e}",
+                    title="User Registration Error",
+                )
+                frappe.response["http_status_code"] = 400
+                return {"success": False, "message": f"Validation error: {e}"}
+
+    except frappe.ValidationError as e:
+        frappe.log_error(
+            message=f"Validation error during registration: {e}",
+            title="User Registration Error",
+        )
+        frappe.response["http_status_code"] = 400
+        return f"Validation error: {e}"
+
+    except Exception as e:
+        frappe.log_error(
+            message=f"Unexpected error during registration: First Name: {full_name}, Email: {email}, Phone: {phone_number}. Error: {e}.",
+            title="User Registration Error",
+        )
+        frappe.response["http_status_code"] = 500
+        return f"Error: {e}"
+
+
+# <---------------- JWT Login API Without Password ---------------->
+
+
+def login_jwt_without_password(usr, expires_in=60, expire_on=None, device=None):
+    """
+    Login the usr and return the JWT token without password
+    """
+    try:
+        frappe.flags.skip_on_session_creation = True
+
+        # Check if the user are provided
+        if not usr:
+            frappe.response["http_status_code"] = 400
+            return {"Success": False, "message": _("Username is required")}
+
+        # Check if the user exists
+        if not frappe.db.exists("User", usr):
+            frappe.response["http_status_code"] = 400
+            return {"Success": False, "message": _("Invalid User")}
+
+        # Generate JWT tokens
+        jwt_access_expiry_time = frappe.db.get_single_value(
+            "JWT Settings", "jwt_access_expiry_time"
+        )
+        jwt_refresh_expiry_time = frappe.db.get_single_value(
+            "JWT Settings", "jwt_refresh_expiry_time"
+        )
+        jwt_response = get_bearer_token(
+            user=usr,
+            jwt_access_expiry_time=jwt_access_expiry_time,
+            jwt_refresh_expiry_time=jwt_refresh_expiry_time,
+        )
+
+        # Prepare response
+        response = {
+            "jwt_access": {
+                "jwt_access_token": jwt_response["token"]["access_token"],
+                "jwt_access_expiry_time": jwt_access_expiry_time,
+            },
+            "jwt_refresh": {
+                "jwt_refresh_token": jwt_response["jwt_refresh_token"],
+                "jwt_refresh_expiry_time": jwt_refresh_expiry_time,
+            },
+            "user": {
+                "full_name": frappe.db.get_value("User", usr, "full_name"),
+                "email": frappe.db.get_value("User", usr, "email"),
+                "phone": frappe.db.get_value("User", usr, "phone"),
+                "user_image": frappe.db.get_value("User", usr, "user_image"),
+            },
+        }
+
+        frappe.response["http_status_code"] = 200
+        return response
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "JWT Login Error")
+        frappe.response["http_status_code"] = 500
+        return {"message": _("Internal Server Error")}
 
 
 @frappe.whitelist(allow_guest=True)
 def login_jwt(usr, pwd, expires_in=60, expire_on=None, device=None):
     """
     Login the usr and return the JWT token
-    :param usr: The usr in ctx
-    :param pwd: Pwd to auth
-    :param expires_in: number of seconds till expiry
-    :param expire_on: yyyy-mm-dd HH:mm:ss to specify the expiry (deprecated)
-    :param device: The device in ctx
     """
     try:
-        frappe.log_error(
-            f"Login attempt: usr={usr}, expires_in={expires_in}, expire_on={expire_on}, device={device}",
-            "JWT Login Debug",
-        )
+        frappe.flags.skip_on_session_creation = True
 
+        # Check if the user are provided
+        if not pwd:
+            frappe.response["http_status_code"] = 400
+            return {"Success": False, "message": _("Password is required")}
+
+        # Check if the password are provided
+        if not usr:
+            frappe.response["http_status_code"] = 400
+            return {"Success": False, "message": _("Username is required")}
+
+        # Check if the user exists
         if not frappe.db.exists("User", usr):
             frappe.response["http_status_code"] = 400
-            return {"message": _("Invalid User")}
+            return {"Success": False, "message": _("Invalid User")}
 
-        from frappe.sessions import clear_sessions
+        # from frappe.sessions import clear_sessions
 
         login = LoginManager()
         if not login.check_password(usr, pwd):
             frappe.response["http_status_code"] = 401
             return {"message": _("Incorrect password")}
-
         login.login_as(usr)
-        login.resume = False
-        login.run_trigger("on_session_creation")
+        login.resume = True
 
-        frappe.local.response["http_status_code"] = 200
+        # Generate JWT tokens
+        jwt_access_expiry_time = frappe.db.get_single_value(
+            "JWT Settings", "jwt_access_expiry_time"
+        )
+        jwt_refresh_expiry_time = frappe.db.get_single_value(
+            "JWT Settings", "jwt_refresh_expiry_time"
+        )
+        jwt_response = get_bearer_token(
+            user=usr,
+            jwt_access_expiry_time=jwt_access_expiry_time,
+            jwt_refresh_expiry_time=jwt_refresh_expiry_time,
+        )
+
+        # Prepare response
+        response = {
+            "jwt_access": {
+                "jwt_access_token": jwt_response["token"]["access_token"],
+                "jwt_access_expiry_time": jwt_access_expiry_time,
+            },
+            "jwt_refresh": {
+                "jwt_refresh_token": jwt_response["jwt_refresh_token"],
+                "jwt_refresh_expiry_time": jwt_refresh_expiry_time,
+            },
+            "user": {
+                "full_name": frappe.db.get_value("User", usr, "full_name"),
+                "email": frappe.db.get_value("User", usr, "email"),
+                "phone": frappe.db.get_value("User", usr, "phone"),
+                "user_image": frappe.db.get_value("User", usr, "user_image"),
+            },
+        }
+
+        frappe.response["http_status_code"] = 200
+        return response
 
     except frappe.ValidationError as e:
         frappe.log_error(f"Validation Error: {str(e)}", "JWT Login Error")
@@ -195,10 +388,6 @@ def logout_jwt():
 
 
 @frappe.whitelist(allow_guest=True)
-
-
-
-@frappe.whitelist(allow_guest=True)
 def create_website_user(email, full_name, password):
     """
     Creates a Website User with the given details if the email is unique and number_verified is not True.
@@ -238,7 +427,7 @@ def create_website_user(email, full_name, password):
                     "doctype": "Website User",
                     "email": email,
                     "full_name": full_name,
-                    "password": password,  
+                    "password": password,
                 }
             )
             user_doc.insert(ignore_permissions=True)
@@ -261,15 +450,109 @@ def create_website_user(email, full_name, password):
         return {"success": False, "message": "Failed to create Website User."}
 
 
+# <---------------- Mobile SMS Vefify for creating website user ---------------->
+
 
 @frappe.whitelist(allow_guest=True)
-def send_sms_otp(number,website_user):
+def send_sms_otp(number, website_user):
     """
     Sends the generated OTP to the given phone number using the SMS service.
     """
-    from requests import RequestException
+
     try:
-        
+
+        # Validate the website user
+        if not website_user:
+            frappe.response.http_status_code = 400
+            return {"success": False, "message": "Website User is required."}
+
+        # Query the Website User
+        validate_website_user = frappe.db.get_value(
+            "Website User",
+            {"name": website_user},
+            ["mobile_otp_attempts", "mobile_last_attempt", "number_verified", "user"],
+        )
+
+        mobile_otp_attempts, mobile_last_attempt, number_verified, user = (
+            validate_website_user if validate_website_user else (0, None, 0, None)
+        )
+        # Check if the website user exists
+        if not validate_website_user:
+            frappe.response.http_status_code = 404
+            return {
+                "success": False,
+                "message": "Website User not found for the provided email.",
+            }
+        if number_verified == 1:
+            frappe.response.http_status_code = 400
+            return {
+                "success": False,
+                "Action_Required": "Login",
+                "message": f"Phone number is already verified for this Email {website_user}. No need to send OTP.",
+            }
+        if user:
+            if frappe.db.exists("User", user):
+                # If the user is already registered, return a message
+                frappe.response.http_status_code = 400
+                return {
+                    "success": False,
+                    "Action_Required": "Login",
+                    "message": f"User {user} is already registered. No need to send OTP.",
+                }
+
+        # Check if the user has exceeded the OTP request limit
+        # If the user has made 4 or more attempts in the last hour, block further requests
+        if validate_website_user:
+            if mobile_otp_attempts >= 4 and mobile_last_attempt:
+                time_difference = frappe.utils.time_diff_in_seconds(
+                    frappe.utils.now_datetime(), mobile_last_attempt
+                )
+                if time_difference < 3600:
+                    frappe.response.http_status_code = 429
+                    return {
+                        "success": False,
+                        "message": "Too many OTP requests. Please try again after 1 hour.",
+                    }
+
+        # Check and update mobile number attempts via Website User
+        try:
+            check_website_user = frappe.db.get_value(
+                "Website User", {"name": website_user}, ["mobile_no", "name"]
+            )
+            mobile, name = check_website_user if check_website_user else (None, None)
+            # return {"check_website_user":mobile ,"name":name ,"website_user": website_user}
+
+            if not name:
+                return {
+                    "success": False,
+                    "message": "Website User not found for the Email.",
+                }
+            else:
+                if name and mobile == str(number):
+                    user_doc = frappe.get_doc("Website User", website_user)
+                    user_doc.mobile_otp_attempts = (
+                        cint(user_doc.mobile_otp_attempts) + 1
+                    )
+                    user_doc.mobile_last_attempt = frappe.utils.now_datetime()
+                    user_doc.save(ignore_permissions=True)
+                else:
+                    user_doc = frappe.get_doc("Website User", website_user)
+                    user_doc.mobile_no = number
+                    user_doc.mobile_otp_attempts = 1
+                    user_doc.mobile_last_attempt = frappe.utils.now_datetime()
+                    user_doc.save(ignore_permissions=True)
+
+        except Exception as e:
+            frappe.log_error(
+                message=f"Error updating mobile OTP attempts: {e}",
+                title="Mobile OTP Update Error",
+            )
+            frappe.response.http_status_code = 401
+            return {
+                "success": False,
+                "message": "An error occurred while updating mobile OTP attempts.",
+            }
+
         otp = generateOTP(4)
         if not number:
             frappe.response.http_status_code = 400
@@ -278,55 +561,335 @@ def send_sms_otp(number,website_user):
         ss = frappe.get_doc("SMS Settings", "SMS Settings")
         if not ss.sms_gateway_url:
             frappe.response.http_status_code = 500
-            return {"success": False, "message": "SMS Gateway URL is not configured"}   
-             
+            return {"success": False, "message": "SMS Gateway URL is not configured"}
+
         message = f"Hi Your OTP for SocialAngel is {otp}. Please do not share this with anyone. Regards SocialAngel"
         encoded_message = requests.utils.quote(message)
-        
+
         args = {"message": encoded_message}
         for d in ss.get("parameters"):
             args[d.parameter] = d.value
-        
+
         args["mobile"] = number
-        
+
         query_string = "&".join(f"{key}={value}" for key, value in args.items())
         url = f"{ss.sms_gateway_url}?{query_string}"
         response = requests.get(url)
         response_text = response.text
-        
-        if response.status_code == 200 and "SUBMIT_SUCCESS" in response_text:
-            frappe.get_doc({
-                "doctype": "SMS OTP",
-                "number": number,
-                "website_user": website_user,
-                "otp": otp,
-                "status": "Sent"
-            }).insert(ignore_permissions=True)
 
-            if frappe.db.exists("Website User", website_user):
-                user_doc = frappe.get_doc("Website User", website_user)
-                user_doc.mobile_empts += 1 
-                user_doc.last_otp_sent = frappe.utils.now_datetime()
-                user_doc.save(ignore_permissions=True)
-                
+        if response.status_code == 200 and "SUBMIT_SUCCESS" in response_text:
+            frappe.get_doc(
+                {"doctype": "SMS OTP", "number": number, "otp": otp, "status": "Sent"}
+            ).insert(ignore_permissions=True)
+
             frappe.db.commit()
             frappe.local.response.http_status_code = 200
 
             # update website user Attempt and timestamp
-            return f"OTP sent to {number}"
-        
+            return {
+                "success": True,
+                "Action_Required": "verify_mobile",
+                "email": website_user,
+                "number": number,
+                "message": f"OTP sent to {number}",
+                }
+
         else:
             frappe.log_error(
-                message=f"SMS sending failed. Response: {response_text}. Phone: {number}",
-                title="SMS OTP Error"
+                message=f"SMS sending failed.  {response_text}. Phone: {number} Response: {e}\nTraceback: {frappe.get_traceback()}",
+                title="SMS OTP Error",
             )
             frappe.response.http_status_code = 500
             return "Failed to send OTP. Please try again."
-    
+
+    except RequestException as re:
+        frappe.log_error(
+            message=f"Request error during SMS OTP send: {re}. Phone: {number} {e}\nTraceback: {frappe.get_traceback()}",
+            title="SMS OTP Error",
+        )
+        frappe.response.http_status_code = 500
+        return "Failed to send OTP due to a network error. Please try again later."
+
+    except Exception as e:
+        frappe.log_error(
+            message=f"Unexpected error during SMS OTP send: {e}. Phone: {number} {e}\nTraceback: {frappe.get_traceback()}",
+            title="SMS OTP Error",
+        )
+        frappe.response.http_status_code = 500
+        return {
+            "message": "An unexpected error occurred while sending OTP. Please try again later."
+        }
+
+
+# <---------------- (1.) Verify SMS OTP and  (2.) Create Real User and (3.) Login  ---------------->
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_sms_otp_login(number, otp, website_user_email=None):
+    """Verifies the last OTP stored in the SMS OTP document within 5 minutes."""
+    try:
+        # Check if the number is provided
+        if not number:
+            frappe.response["http_status_code"] = 400
+            return {"success": False, "message": "Phone number is required."}
+
+        # Validate the phone number format
+        if not re.match(r"^\+?[0-9]{10,15}$", number):
+            frappe.response.http_status_code = 400
+            return {"success": False, "message": "Invalid phone number format."}
+
+        # Check if the website user email is provided
+        if not website_user_email:
+            frappe.response["http_status_code"] = 400
+            return {"success": False, "message": "Website User email is required."}
+
+        # Checking if the user exists in the User table before create website user
+        if frappe.db.exists("User", website_user_email):
+            frappe.response["http_status_code"] = 400
+            return {
+                "success": False,
+                "Action_Required": "Login",
+                "message": f"User {website_user_email} is already registered. No need to verify OTP.",
+            }
+        website_user = frappe.db.get_value(
+            "Website User", {"email": website_user_email}, ["name"]
+        )
+        # Check if the website user exists
+        if not website_user:
+            frappe.response["http_status_code"] = 404
+            return {
+                "success": False,
+                "Action_Required": "Create First Website User for given email",
+                "message": "Website User not found for the provided email.",
+            }
+
+        # Check if the document exists
+        if not frappe.db.exists("SMS OTP", {"number": number}):
+            frappe.response["http_status_code"] = 404
+            return {"success": False, "message": "No OTP found number."}
+
+        # Fetch the last document
+        try:
+            otp_doc = frappe.get_last_doc(
+                "SMS OTP", filters={"number": number, "status": "Sent"}
+            )
+        except frappe.DoesNotExistError:
+            frappe.response["http_status_code"] = 404
+            return {"success": False, "message": "No OTP found for this number."}
+
+        # Check if OTP has expired
+        expiry_time = add_to_date(otp_doc.creation, minutes=5)
+        if now_datetime() > expiry_time:
+            frappe.response["http_status_code"] = 403
+            frappe.db.set_value("SMS OTP", otp_doc.name, "status", "Expired")
+            frappe.db.commit()
+            return "OTP expired. Please request a new one."
+
+        # Validate OTP
+        if otp_doc.otp != str(otp):
+            frappe.response["http_status_code"] = 400
+            return "Invalid OTP."
+
+        # Mark OTP as verified
+        frappe.db.set_value("SMS OTP", otp_doc.name, "status", "Verified")
+
+        if website_user_email:
+            website_user = frappe.db.get_value(
+                "Website User",
+                {"email": website_user_email},
+                ["name", "full_name", "email", "password"],
+            )
+            if website_user:
+                name, full_name, email, password = website_user
+                user = register_real_user(
+                    full_name=full_name,
+                    email=email,
+                    password=password,
+                    phone_number=number,
+                )
+                print(f"User Registration Response: {user}")
+                if user.get("success") is False:
+                    frappe.response["http_status_code"] = 400
+                    return user.get("message", "Failed to register user.")
+                else:
+                    frappe.db.set_value(
+                        "Website User", name, {"number_verified": 1, "user": email}
+                    )
+                    frappe.db.commit()
+                    login_response = login_jwt(email, password)
+                    frappe.response["http_status_code"] = 201
+                    return {
+                        "success": True,
+                        "message": "OTP verified successfully and User Created.",
+                        "Action_Required": "Login",
+                        **login_response,
+                    }
+            else:
+                frappe.response["http_status_code"] = 404
+                return {
+                    "success": False,
+                    "Action_Required": "Create First Website User for given email",
+                    "message": "Otp Verified successfully but Website User not found for the provided email.",
+                }
+        frappe.db.commit()
+
+        frappe.response["http_status_code"] = 201
+        return {
+            "success": True,
+            "message": "OTP verified successfully.",
+            "Action_Required": "User Creation Failed",
+        }
+    except frappe.PermissionError:
+        frappe.response["http_status_code"] = 403
+        return "Permission denied for SMS OTP."
+    except Exception as e:
+        frappe.log_error(
+            message=f"Unexpected error: {e} : {frappe.get_traceback()}",
+            title="Verify SMS OTP Error",
+        )
+        frappe.response["http_status_code"] = 500
+        return "An unexpected error occurred."
+
+
+# <---------------- Mobile SMS OTP Vefify for Login ---------------->
+
+
+@frappe.whitelist(allow_guest=True)
+def send_sms_otp_for_mobile_login(number):
+    """
+    Sends the generated OTP to the given phone number using the SMS service.
+    """
+    try:
+        # Check the phone number
+        if not number:
+            frappe.response.http_status_code = 400
+            return {"success": False, "message": "Phone number is required."}
+
+        # Check number in website user
+        website_user = frappe.db.get_value(
+            "Website User", filters={"mobile_no": number}, fieldname=["name"]
+        )
+        if not website_user:
+            frappe.response.http_status_code = 404
+            return {
+                "success": False,
+                "message": "Website User not found for the provided phone number.",
+            }
+
+        # Query the Mobile Login Attempt doctype
+        mobile_login_attempt = frappe.db.get_value(
+            "Mobile Login Attempt",
+            filters={"mobile_number": number},
+            fieldname=["otp_attempts", "last_attempt_time"],
+        )
+
+        # If the record doesn't exist, create it
+        if not mobile_login_attempt:
+            frappe.get_doc(
+                {
+                    "doctype": "Mobile Login Attempt",
+                    "mobile_number": number,
+                    "otp_attempts": 0,
+                    "last_attempt_time": None,
+                }
+            ).insert(ignore_permissions=True)
+            frappe.db.commit()
+            mobile_login_attempt = (0, None)
+
+        otp_attempts, last_attempt_time = mobile_login_attempt
+
+        # Check if the user has exceeded the OTP request limit
+        if last_attempt_time:
+            time_difference = frappe.utils.time_diff_in_seconds(
+                frappe.utils.now_datetime(), last_attempt_time
+            )
+            if time_difference >= 3600:
+                # Reset OTP attempts if time_difference exceeds 1 hour
+                otp_attempts = 0
+                frappe.db.set_value(
+                    "Mobile Login Attempt",
+                    {"mobile_number": number},
+                    {"otp_attempts": 0},
+                )
+            elif otp_attempts >= 4:
+                frappe.response.http_status_code = 429
+                return {
+                    "success": False,
+                    "message": "Too many OTP requests. Please try again after 1 hour.",
+                }
+
+        # Update OTP attempts and last attempt time
+        try:
+            frappe.db.set_value(
+                "Mobile Login Attempt",
+                {"mobile_number": number},
+                {
+                    "otp_attempts": otp_attempts + 1,
+                    "last_attempt_time": frappe.utils.now_datetime(),
+                },
+            )
+        except Exception as e:
+            frappe.log_error(
+                message=f"Error updating OTP attempts: {e}",
+                title="Mobile OTP Update Error",
+            )
+            frappe.response.http_status_code = 500
+            return {
+                "success": False,
+                "message": "An error occurred while updating OTP attempts.",
+            }
+
+        # Generate OTP
+        otp = generateOTP(4)
+        if not number:
+            frappe.response.http_status_code = 400
+            return {"success": False, "message": "Phone number is required."}
+
+        ss = frappe.get_doc("SMS Settings", "SMS Settings")
+        if not ss.sms_gateway_url:
+            frappe.response.http_status_code = 500
+            return {"success": False, "message": "SMS Gateway URL is not configured"}
+
+        message = f"Hi Your OTP for SocialAngel is {otp}. Please do not share this with anyone. Regards SocialAngel"
+        encoded_message = requests.utils.quote(message)
+
+        args = {"message": encoded_message}
+        for d in ss.get("parameters"):
+            args[d.parameter] = d.value
+
+        args["mobile"] = number
+
+        query_string = "&".join(f"{key}={value}" for key, value in args.items())
+        url = f"{ss.sms_gateway_url}?{query_string}"
+        response = requests.get(url)
+        response_text = response.text
+
+        if response.status_code == 200 and "SUBMIT_SUCCESS" in response_text:
+            frappe.get_doc(
+                {"doctype": "SMS OTP", "number": number, "otp": otp, "status": "Sent"}
+            ).insert(ignore_permissions=True)
+
+            frappe.db.commit()
+            frappe.local.response.http_status_code = 200
+
+            return {
+                "success": True,
+                "Action_Required": "Verify Mobile OTP for Login",
+                "message":f"OTP sent to {number}"
+            }
+
+        else:
+            frappe.log_error(
+                message=f"SMS sending failed. Response: {response_text}. Phone: {number}",
+                title="SMS OTP Error",
+            )
+            frappe.response.http_status_code = 500
+            return "Failed to send OTP. Please try again."
+
     except RequestException as re:
         frappe.log_error(
             message=f"Request error during SMS OTP send: {re}. Phone: {number}",
-            title="SMS OTP Error"
+            title="SMS OTP Error",
         )
         frappe.response.http_status_code = 500
         return "Failed to send OTP due to a network error. Please try again later."
@@ -334,8 +897,286 @@ def send_sms_otp(number,website_user):
     except Exception as e:
         frappe.log_error(
             message=f"Unexpected error during SMS OTP send: {e}. Phone: {number}",
-            title="SMS OTP Error"
+            title="SMS OTP Error",
         )
         frappe.response.http_status_code = 500
-        return {"message": "An unexpected error occurred while sending OTP. Please try again later."}
-    
+        return {
+            "message": "An unexpected error occurred while sending OTP. Please try again later."
+        }
+
+
+@frappe.whitelist(allow_guest=True)
+def login_with_google(code):
+    try:
+
+        if code is None:
+            return {"success": False, "message": _("Google code is required for login")}
+        google_id_token = code.get("credential")
+        if not google_id_token:
+            frappe.throw(_("Google ID token is required"))
+
+        # Validate Google token
+        res = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": google_id_token},
+        )
+        if res.status_code != 200:
+            frappe.throw(_("Invalid Google token"))
+
+        userinfo = res.json()
+        email = userinfo.get("email")
+        first_name = userinfo.get("given_name", "")
+        last_name = userinfo.get("family_name", "")
+        image_url = userinfo.get("picture", "")
+
+        if not email:
+            frappe.throw(_("Email is required"))
+
+        # Check if user exists in the User table
+        user_exists = frappe.db.get_value("User", filters={"email": email})
+        if user_exists:
+            # Call login_jwt if user exists
+            password = frappe.db.get_value("User", email, "new_password")
+            if not password:
+                frappe.throw(_("Password not set for the user"))
+            login_response = login_jwt_without_password(email)
+            frappe.response["http_status_code"] = 200
+            return {
+                "success": True,
+                "Action_Required": "Login",
+                "message": "User logged in successfully.",
+                **login_response,
+            }
+        else:
+            # Check if website user exists
+            website_user = frappe.db.get_value(
+                "Website User",
+                filters={"name": email},
+                fieldname=["name", "email_verified", "number_verified", "user"],
+            )
+            if website_user:
+                name, email_verified, number_verified, user = website_user
+                if email_verified != 1 or number_verified != 1:
+                    return {
+                        "success": False,
+                        "Action_Required": "Verify Phone or Email",
+                        "message": "Website User exists but verification is required.",
+                        "website_user": {
+                            "name": name,
+                            "email_verified": email_verified,
+                            "number_verified": number_verified,
+                        },
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "Action_Required": "Complete Registration",
+                        "message": "Website User exists but User registration is incomplete.",
+                        "website_user": {
+                            "name": name,
+                            "email_verified": email_verified,
+                            "number_verified": number_verified,
+                        },
+                    }
+
+            # Create a new Website User if none exists
+            website_user_doc = frappe.get_doc(
+                {
+                    "doctype": "Website User",
+                    "email": email,
+                    "full_name": f"{first_name} {last_name}",
+                    "user_image": image_url,
+                    "email_verified": 1,
+                }
+            )
+            website_user_doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+
+            return {
+                "success": True,
+                "message": "Website User created successfully.",
+                "website_user": {
+                    "name": website_user_doc.name,
+                    "email_verified": website_user_doc.email_verified,
+                    "number_verified": website_user_doc.number_verified,
+                },
+            }
+
+    except Exception as e:
+        frappe.response["http_status_code"] = 500
+        frappe.log_error(
+            f"Error logging in with Google: {str(e)}", "Login with Google Error"
+        )
+        return {"message": "An error occurred while logging in with Google"}
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_sms_otp_for_mobile_login(number, otp):
+    """Verifies the last OTP stored in the SMS OTP document within 5 minutes."""
+    try:
+        # Check if the number is provided
+        if not number:
+            frappe.response["http_status_code"] = 400
+            return {"success": False, "message": "Phone number is required."}
+
+        # Validate the phone number format
+        if not re.match(r"^\+?[0-9]{10,15}$", number):
+            frappe.response["http_status_code"] = 400
+            return {"success": False, "message": "Invalid phone number format."}
+
+        # Check if the document exists
+        if not frappe.db.exists("SMS OTP", {"number": number}):
+            frappe.response["http_status_code"] = 404
+            return {"success": False, "message": "No OTP found for this number."}
+
+        # Fetch the last document
+        try:
+            otp_doc = frappe.get_last_doc(
+                "SMS OTP", filters={"number": number, "status": "Sent"}
+            )
+        except frappe.DoesNotExistError:
+            frappe.response["http_status_code"] = 404
+            return {"success": False, "message": "No OTP found for this number."}
+
+        # Check if OTP has expired
+        expiry_time = add_to_date(otp_doc.creation, minutes=5)
+        if now_datetime() > expiry_time:
+            frappe.response["http_status_code"] = 403
+            frappe.db.set_value("SMS OTP", otp_doc.name, "status", "Expired")
+            frappe.db.commit()
+            return {
+                "success": False,
+                "message": "OTP expired. Please request a new one.",
+            }
+
+        # Validate OTP
+        if otp_doc.otp != str(otp):
+            frappe.response["http_status_code"] = 400
+            return {"success": False, "message": "Invalid OTP."}
+
+        # Mark OTP as verified
+        frappe.db.set_value("SMS OTP", otp_doc.name, "status", "Verified")
+
+        # Fetch website user details
+        website_users = frappe.get_all(
+            "Website User",
+            filters={"mobile_no": number},
+            fields=["name", "email_verified", "number_verified", "user"],
+        )
+
+        if not website_users:
+            frappe.response["http_status_code"] = 404
+            return {
+                "success": False,
+                "message": "Website User not found for the provided phone number.",
+            }
+
+        frappe.response["http_status_code"] = 200
+        return {
+            "success": True,
+            "Action_Required": "Choose email to Login",
+            "message": "OTP verified successfully.",
+            "website_users": website_users,
+        }
+
+    except frappe.PermissionError:
+        frappe.response["http_status_code"] = 403
+        return {"success": False, "message": "Permission denied for SMS OTP."}
+    except Exception as e:
+        frappe.log_error(
+            message=f"Unexpected error: {e} : {frappe.get_traceback()}",
+            title="Verify SMS OTP Error",
+        )
+        frappe.response["http_status_code"] = 500
+        return {"success": False, "message": "An unexpected error occurred."}
+
+
+@frappe.whitelist(allow_guest=True)
+def mobile_verified_email_login(email, number):
+    """
+    Login using email and mobile verification status.
+    If the email is verified and the mobile number is verified, login the user.
+    If the email is not verified or the mobile number is not verified, return an error message.
+    """
+    try:
+        if not number:
+            frappe.response["http_status_code"] = 400
+            return {"success": False, "message": "Phone number is required."}
+
+        mobile_validate_status = frappe.db.get_value(
+            "Mobile Login Attempt",
+            filters={"name": number},
+            fieldname=["last_attempt_time"],
+        )
+        if not mobile_validate_status:
+            frappe.response["http_status_code"] = 404
+            return {
+                "success": False,
+                "message": "Mobile Login Attempt not found for the provided phone number.",
+            }
+        last_attempt_time = mobile_validate_status
+        expiry_time = add_to_date(last_attempt_time, minutes=5)
+        if now_datetime() > expiry_time:
+            frappe.response["http_status_code"] = 400
+            return {
+            "success": False, 
+            "Action_Required": "Login Again with OTP",
+            "message": "Request expired. Please try again within 5 minutes."
+            }
+
+        if not email:
+            frappe.response["http_status_code"] = 400
+            return {"success": False, "message": "Email is required."}
+
+        # Check if the email exists in the Website User table
+        website_user = frappe.db.get_value(
+            "Website User",
+            filters={"email": email},
+            fieldname=["name", "email_verified", "number_verified", "user"],
+        )
+
+        if not website_user:
+            frappe.response["http_status_code"] = 404
+            return {
+                "success": False,
+                "message": "Website User not found for the provided email.",
+            }
+
+        name, email_verified, number_verified, user = website_user
+
+        # if email_verified != 1 or number_verified != 1:
+        if number_verified != 1:
+
+            return {
+                "success": False,
+                "Action_Required": "Verify Phone or Email",
+                "message": "Website User exists but verification is required.",
+                "website_user": {
+                    "name": name,
+                    "email_verified": email_verified,
+                    "number_verified": number_verified,
+                },
+            }
+
+        # Check if user exists in the User table
+        user_exists = frappe.db.get_value("User", filters={"email": email})
+        if user_exists:
+
+            login_response = login_jwt_without_password(email)
+            frappe.response["http_status_code"] = 200
+            return {
+                "success": True,
+                "Action_Required": "Login",
+                "message": "User logged in successfully.",
+                **login_response,
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Website User exists but User registration is incomplete for {email}.",
+            }
+
+    except Exception as e:
+        frappe.response["http_status_code"] = 500
+        frappe.log_error(f"Error logging in with email: {str(e)}", "Email Login Error")
+        return {"message": "An error occurred while logging in with email"}

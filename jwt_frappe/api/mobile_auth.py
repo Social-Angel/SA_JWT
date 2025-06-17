@@ -244,7 +244,6 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
 
         # Mark OTP as verified
         frappe.db.set_value("SMS OTP", otp_doc.name, "status", "Verified")
-        frappe.db.set_value("User", {"phone": number}, "number_verified", 1)
 
         # Update Website User if email is provided
         if website_user_email:

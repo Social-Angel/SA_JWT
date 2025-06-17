@@ -16,7 +16,8 @@ __version__ = '1.0.2'
 def on_session_creation(login_manager):
   from .utils.auth import get_bearer_token
   if frappe.form_dict.get('use_jwt') and cint(frappe.form_dict.get('use_jwt')):
-    
+    if frappe.flags.get("skip_on_session_creation"):
+      return
     # Get the JWT expiry time from JWT settings 
     jwt_access_expiry_time = frappe.db.get_single_value("JWT Settings", "jwt_access_expiry_time")
     jwt_refresh_expiry_time = frappe.db.get_single_value("JWT Settings", "jwt_refresh_expiry_time")
