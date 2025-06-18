@@ -197,12 +197,10 @@ def login_jwt(usr, pwd, expires_in=60, expire_on=None, device=None):
     try:
         frappe.flags.skip_on_session_creation = True
 
-        # Check if the user are provided
+        # Check if the username and password are provided
         if not pwd:
             frappe.response["http_status_code"] = 400
             return {"Success": False, "message": _("Password is required")}
-
-        # Check if the password are provided
         if not usr:
             frappe.response["http_status_code"] = 400
             return {"Success": False, "message": _("Username is required")}
@@ -212,12 +210,19 @@ def login_jwt(usr, pwd, expires_in=60, expire_on=None, device=None):
             frappe.response["http_status_code"] = 400
             return {"Success": False, "message": _("Invalid User")}
 
-        # from frappe.sessions import clear_sessions
-
         login = LoginManager()
-        if not login.check_password(usr, pwd):
+        try:
+            if not login.check_password(usr, pwd):
+                frappe.response["http_status_code"] = 401
+                return {"Success": False, "message": _("Incorrect username or password")}
+        except frappe.AuthenticationError:
+            frappe.log_error(
+                message=f"Authentication failed for user: {usr}",
+                title="Login Error"
+            )
             frappe.response["http_status_code"] = 401
-            return {"message": _("Incorrect password")}
+            return {"Success": False, "message": _("Incorrect username or password")}
+
         login.login_as(usr)
         login.resume = True
 
@@ -406,6 +411,7 @@ def create_website_user(email, full_name, password):
                 frappe.response.http_status_code = 400
                 return {
                     "success": False,
+                    "Action_Required": "Login",
                     "message": "Email is already registered and phone number is verified. Cannot create a new user.",
                 }
             else:
@@ -432,6 +438,7 @@ def create_website_user(email, full_name, password):
             )
             user_doc.insert(ignore_permissions=True)
             frappe.db.commit()
+            frappe.response.http_status_code = 201
             return {
                 "success": True,
                 "message": "Website User created successfully.",
@@ -497,7 +504,7 @@ def send_sms_otp(number, website_user):
                 return {
                     "success": False,
                     "Action_Required": "Login",
-                    "message": f"User {user} is already registered. No need to send OTP.",
+                    "message": f" User {user} is already registered. No need to send OTP.",
                 }
 
         # Check if the user has exceeded the OTP request limit
@@ -715,6 +722,7 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
                     frappe.db.set_value(
                         "Website User", name, {"number_verified": 1, "user": email}
                     )
+                    
                     frappe.db.commit()
                     login_response = login_jwt(email, password)
                     frappe.response["http_status_code"] = 201
@@ -907,10 +915,14 @@ def send_sms_otp_for_mobile_login(number):
 
 @frappe.whitelist(allow_guest=True)
 def login_with_google(code):
+    """
+    Login using Google OAuth. If the user does not exist, create a Website User,
+    then create a User, and finally log them in.
+    """
     try:
-
-        if code is None:
+        if not code:
             return {"success": False, "message": _("Google code is required for login")}
+
         google_id_token = code.get("credential")
         if not google_id_token:
             frappe.throw(_("Google ID token is required"))
@@ -935,10 +947,7 @@ def login_with_google(code):
         # Check if user exists in the User table
         user_exists = frappe.db.get_value("User", filters={"email": email})
         if user_exists:
-            # Call login_jwt if user exists
-            password = frappe.db.get_value("User", email, "new_password")
-            if not password:
-                frappe.throw(_("Password not set for the user"))
+            # Login the user if they exist
             login_response = login_jwt_without_password(email)
             frappe.response["http_status_code"] = 200
             return {
@@ -951,56 +960,67 @@ def login_with_google(code):
             # Check if website user exists
             website_user = frappe.db.get_value(
                 "Website User",
-                filters={"name": email},
-                fieldname=["name", "email_verified", "number_verified", "user"],
+                filters={"email": email},
+                fieldname=["name", "email_verified", "number_verified"],
             )
-            if website_user:
-                name, email_verified, number_verified, user = website_user
-                if email_verified != 1 or number_verified != 1:
-                    return {
-                        "success": False,
-                        "Action_Required": "Verify Phone or Email",
-                        "message": "Website User exists but verification is required.",
-                        "website_user": {
-                            "name": name,
-                            "email_verified": email_verified,
-                            "number_verified": number_verified,
-                        },
+            if not website_user:
+                # Create a new Website User
+                website_user_doc = frappe.get_doc(
+                    {
+                        "doctype": "Website User",
+                        "email": email,
+                        "full_name": f"{first_name} {last_name}",
+                        "user_image": image_url,
+                        "email_verified": 1,
                     }
-                else:
-                    return {
-                        "success": False,
-                        "Action_Required": "Complete Registration",
-                        "message": "Website User exists but User registration is incomplete.",
-                        "website_user": {
-                            "name": name,
-                            "email_verified": email_verified,
-                            "number_verified": number_verified,
-                        },
-                    }
+                )
+                website_user_doc.insert(ignore_permissions=True)
+                frappe.db.commit()
+                if website_user_doc.name:
+                    # Create a new User
+                    user_doc = frappe.get_doc(
+                        {
+                            "doctype": "User",
+                            "email": email,
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "user_image": image_url,
+                        }
+                    )
+                    user_doc.insert(ignore_permissions=True)
+                    frappe.db.set_value(
+                        "Website User", website_user_doc.name, "user", user_doc.name
+                    )
+                    frappe.db.set_value(
+                        "Website User", website_user_doc.name, "email_verified", 1
+                    )
+                    frappe.db.commit() 
 
-            # Create a new Website User if none exists
-            website_user_doc = frappe.get_doc(
-                {
-                    "doctype": "Website User",
-                    "email": email,
-                    "full_name": f"{first_name} {last_name}",
-                    "user_image": image_url,
-                    "email_verified": 1,
+                # Login the newly created user
+                login_response = login_jwt_without_password(email)
+                frappe.response["http_status_code"] = 201
+                return {
+                    "success": True,
+                    "Action_Required": "Login",
+                    "message": "User created and logged in successfully.",
+                    **login_response,
                 }
-            )
-            website_user_doc.insert(ignore_permissions=True)
-            frappe.db.commit()
+            else:
+                user = frappe.get_value("User", filters={"email": email}, fieldname="name")
+                if not user:
+                    # Create a new User if it doesn't exist
+                    user_doc = frappe.get_doc(
+                        {
+                            "doctype": "User",
+                            "email": email,
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "user_image": image_url,
+                        }
+                    )
+                    user_doc.insert(ignore_permissions=True)
+                    frappe.db.commit()
 
-            return {
-                "success": True,
-                "message": "Website User created successfully.",
-                "website_user": {
-                    "name": website_user_doc.name,
-                    "email_verified": website_user_doc.email_verified,
-                    "number_verified": website_user_doc.number_verified,
-                },
-            }
 
     except Exception as e:
         frappe.response["http_status_code"] = 500
