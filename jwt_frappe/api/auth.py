@@ -204,7 +204,11 @@ def login_jwt(usr, pwd, expires_in=60, expire_on=None, device=None):
         if not usr:
             frappe.response["http_status_code"] = 400
             return {"Success": False, "message": _("Username is required")}
-
+        
+        user_doc = frappe.get_doc("User", usr)
+        if not user_doc.enabled:
+            raise frappe.ValidationError(_("User is disabled"))
+        
         # Check if the user exists
         if not frappe.db.exists("User", usr):
             frappe.response["http_status_code"] = 400
