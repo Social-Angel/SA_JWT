@@ -307,6 +307,9 @@ def refresh_token():
                 )
             }
         if JWT_Data.get("success") is True:
+            user = frappe.db.get_value(
+                "OAuth Bearer Token", token, "user"
+            )
             jwt_access_expiry_time = frappe.db.get_single_value(
                 "JWT Settings", "jwt_access_expiry_time"
             )
@@ -315,7 +318,7 @@ def refresh_token():
             )
 
             jwt_access_token = generate_jwt_token(
-                user="user", expires_in=jwt_access_expiry_time
+                user=user, expires_in=jwt_access_expiry_time
             )
 
             token_doc = frappe.get_doc("OAuth Bearer Token", token)
