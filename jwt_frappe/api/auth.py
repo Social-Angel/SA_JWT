@@ -44,22 +44,36 @@ def register_real_user(full_name, email, phone_number):
     try:
         if not email:
             frappe.response["http_status_code"] = 400
-            return "Email is required"
+            return {
+                "success": False,
+                "message":"Email is required"}
 
         if not phone_number:
             frappe.response["http_status_code"] = 400
-            return "Phone number is required"
+            return {
+                "success": False,
+                "message": "Phone number is required"
+            }
         if not re.match(r"^\+?[0-9]{10,15}$", phone_number):
             frappe.response["http_status_code"] = 400
-            return "Invalid phone number format"
+            return {
+                "success": False,
+                "message": "Invalid phone number format. It should be 10 to 15 digits long."
+            }
         if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
             frappe.response["http_status_code"] = 400
-            return "Invalid email address format"
+            return {
+                "success": False,
+                "message": "Invalid email format. Please provide a valid email address."
+            }
 
         user = frappe.db.get_value("User", email, fieldname=["name"])
         if user:
             frappe.response["http_status_code"] = 409
-            return "This email is already registered"
+            return {
+                "success": False,
+                "message": f"User with email {email} already exists. Please use a different email or login.",
+            }
 
         users_count_with_same_phone = frappe.db.count("User", {"phone": phone_number})
         if users_count_with_same_phone > 5:
@@ -740,7 +754,7 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
                 print(f"User Registration Response: {user}")
                 if user.get("success") is False:
                     frappe.response["http_status_code"] = 400
-                    return user.get("message", "Failed to register user.")
+                    return user.get("message", user.get("message", "User creation failed."))
                 else:
                     frappe.db.set_value(
                         "Website User", name, {"number_verified": 1, "user": email}
@@ -774,14 +788,20 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
         }
     except frappe.PermissionError:
         frappe.response["http_status_code"] = 403
-        return "Permission denied for SMS OTP."
+        return {
+            "success": False,
+            "message": "You do not have permission to perform this action.",
+        }
     except Exception as e:
         frappe.log_error(
-            message=f"Unexpected error: {e} : {frappe.get_traceback()}",
+            message=f"Unexpected error Real User: {e} : {frappe.get_traceback()}",
             title="Verify SMS OTP Error",
         )
         frappe.response["http_status_code"] = 500
-        return "An unexpected error occurred."
+        return {
+            "success": False,
+            "message": "An unexpected error occurred while verifying OTP. Please try again later.",
+        }
 
 
 # <---------------- Mobile SMS OTP Vefify for Login ---------------->
