@@ -458,7 +458,7 @@ def create_website_user(email, full_name, password):
                     INSERT INTO `__Auth` (name, doctype,fieldname, password, encrypted)
                     VALUES (%s, %s, %s, %s, %s)
                 """,
-                (email, "Website User", "password", hashed_password, 1),
+                (email, "Website User", "password", hashed_password, 0),
             )
 
             frappe.db.commit()
@@ -467,7 +467,7 @@ def create_website_user(email, full_name, password):
                 "success": True,
                 "message": "Website User created successfully.",
                 "user_doc": {
-                    "name": user_doc.name,
+                    "name": user_doc.name.lower(),
                     "email": user_doc.email,
                     "mobile_no": user_doc.mobile_no,
                 },
