@@ -44,27 +44,22 @@ def register_real_user(full_name, email, phone_number):
     try:
         if not email:
             frappe.response["http_status_code"] = 400
-            return {
-                "success": False,
-                "message":"Email is required"}
+            return {"success": False, "message": "Email is required"}
 
         if not phone_number:
             frappe.response["http_status_code"] = 400
-            return {
-                "success": False,
-                "message": "Phone number is required"
-            }
+            return {"success": False, "message": "Phone number is required"}
         if not re.match(r"^\+?[0-9]{10,15}$", phone_number):
             frappe.response["http_status_code"] = 400
             return {
                 "success": False,
-                "message": "Invalid phone number format. It should be 10 to 15 digits long."
+                "message": "Invalid phone number format. It should be 10 to 15 digits long.",
             }
         if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
             frappe.response["http_status_code"] = 400
             return {
                 "success": False,
-                "message": "Invalid email format. Please provide a valid email address."
+                "message": "Invalid email format. Please provide a valid email address.",
             }
 
         user = frappe.db.get_value("User", email, fieldname=["name"])
@@ -99,7 +94,7 @@ def register_real_user(full_name, email, phone_number):
         try:
             user_doc.insert(ignore_permissions=True)
             frappe.db.commit()
-            
+
             frappe.response["http_status_code"] = 201
             return {
                 "success": True,
@@ -321,9 +316,7 @@ def refresh_token():
                 )
             }
         if JWT_Data.get("success") is True:
-            user = frappe.db.get_value(
-                "OAuth Bearer Token", token, "user"
-            )
+            user = frappe.db.get_value("OAuth Bearer Token", token, "user")
             jwt_access_expiry_time = frappe.db.get_single_value(
                 "JWT Settings", "jwt_access_expiry_time"
             )
@@ -742,7 +735,11 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
             website_user = frappe.db.get_value(
                 "Website User",
                 {"email": website_user_email},
-                ["name", "full_name", "email", ],
+                [
+                    "name",
+                    "full_name",
+                    "email",
+                ],
             )
             if website_user:
                 name, full_name, email = website_user
@@ -754,13 +751,16 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
                 print(f"User Registration Response: {user}")
                 if user.get("success") is False:
                     frappe.response["http_status_code"] = 400
-                    return user.get("message", user.get("message", "User creation failed."))
+                    return user.get(
+                        "message", user.get("message", "User creation failed.")
+                    )
                 else:
                     frappe.db.set_value(
                         "Website User", name, {"number_verified": 1, "user": email}
                     )
                     frappe.db.sql(
-                        """ UPDATE `__Auth` SET doctype = %s WHERE name = %s """, ("User", email),
+                        """ UPDATE `__Auth` SET doctype = %s WHERE name = %s """,
+                        ("User", email),
                     )
                     frappe.db.commit()
                     login_response = login_jwt_without_password(email)
@@ -1266,3 +1266,139 @@ def login_with_google(code):
             "Login with Google Error",
         )
         return {"message": "An error occurred while logging in with Google"}
+
+
+"""
+EMAIL LOGIN
+"""
+
+
+@frappe.whitelist(allow_guest=True)
+def send_email_otp(email):
+    """
+    Generates and stores OTP in the User DocType, then sends it via email.
+    """
+    try:
+        if not email:
+            frappe.local.response.http_status_code = 400
+            return "Email address is required."
+
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            frappe.local.response.http_status_code = 400
+            return "Invalid email address format."
+
+        if not frappe.db.exists("User", email):
+            frappe.local.response.http_status_code = 404
+            return "User not found. Please register first."
+        else:
+            user_doc = frappe.get_doc("User", email)
+
+        generated_otp = generateOTP(4)
+
+        otp_doc = frappe.new_doc("SMS OTP")
+        otp_doc.update({"email": email, "otp": generated_otp, "status": "Sent"})
+        otp_doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        email_message = f"""
+        <p>Dear {user_doc.full_name},</p>
+        <p>Your OTP to verify your SocialAngel profile is <strong>{generated_otp}</strong>.</p>
+        <p>Do not share this OTP with anyone. It is valid for 5 minutes.</p>
+        <p>Thank you!</p>
+        <p>Warmly,<br>SocialAngel</p>
+        """
+
+        frappe.sendmail(
+            recipients=email,
+            subject=f"{generated_otp} - Your OTP to Verify Your SocialAngel Profile",
+            message=email_message,
+            now=True,
+        )
+        frappe.local.response.http_status_code = 200
+        return f"OTP sent to {email}"
+
+    except Exception as e:
+        frappe.local.response.http_status_code = 500
+        frappe.log_error(f"Unexpected error: {e}", "Send Email OTP Error")
+        return "An error occurred while sending the OTP. Please try again."
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_email_otp(email, otp, need_login=False):
+    try:
+        frappe.set_user("Administrator")
+        if not frappe.db.exists("SMS OTP", {"email": email, "otp": otp}):
+            frappe.local.response.http_status_code = 403
+            return "Invalid OTP."
+
+        stored_otp = frappe.get_last_doc(
+            "SMS OTP", filters={"email": email, "otp": otp, "status": "Sent"}
+        )
+
+        if stored_otp.creation < add_to_date(now_datetime(), minutes=-5):
+            frappe.local.response.http_status_code = 403
+            return "OTP expired. Please request a new one."
+
+        frappe.db.set_value("SMS OTP", stored_otp.name, "status", "Verified")
+        frappe.db.set_value("User", email, "otp_verified", 1)
+        frappe.db.set_value("User", email, "email_verified", 1)
+        frappe.db.commit()
+
+        if need_login:
+            login_response = login_jwt_without_password(email)
+            frappe.response["http_status_code"] = 201
+            return {
+                "success": True,
+                "message": "Email OTP verified successfully and user logged in.",
+                "Action_Required": "Login",
+                **login_response,
+            }
+
+        login_response = login_jwt_without_password(email)
+        frappe.response["http_status_code"] = 201
+        return {
+                "success": True,
+                "message": "Email OTP verified successfully and user logged in.",
+                "Action_Required": "Login",
+                **login_response,
+            }
+
+    except frappe.DoesNotExistError:
+        frappe.log_error(
+            message=f"Document not found error while verifying OTP for email: {email}",
+            title="Verify Email OTP Error",
+        )
+        frappe.local.response.http_status_code = 404
+        return "Document not found. Please try again."
+
+    except frappe.PermissionError:
+        frappe.log_error(
+            message=f"Permission error while verifying OTP for email: {email}",
+            title="Verify Email OTP Error",
+        )
+        frappe.local.response.http_status_code = 403
+        return "Permission denied. Please contact support."
+
+    except frappe.ValidationError as ve:
+        frappe.log_error(
+            message=f"Validation error while verifying OTP for email: {email}. Error: {ve}",
+            title="Verify Email OTP Error",
+        )
+        frappe.local.response.http_status_code = 400
+        return f"Validation error: {ve}"
+
+    except frappe.AuthenticationError as ae:
+        frappe.log_error(
+            message=f"Authentication error while verifying OTP for email: {email}. Error: {ae}",
+            title="Verify Email OTP Error",
+        )
+        frappe.local.response.http_status_code = 401
+        return f"Authentication error: {ae}"
+
+    except Exception as e:
+        frappe.log_error(
+            message=f"Unexpected error while verifying OTP for email: {email}. Error: {e}",
+            title="Verify Email OTP Error",
+        )
+        frappe.local.response.http_status_code = 500
+        return "An unexpected error occurred. Please contact support."
