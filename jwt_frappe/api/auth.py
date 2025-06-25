@@ -73,7 +73,10 @@ def register_real_user(full_name, email, phone_number):
         users_count_with_same_phone = frappe.db.count("User", {"phone": phone_number})
         if users_count_with_same_phone > 5:
             frappe.response["http_status_code"] = 409
-            return "This phone number exceeds the limit of users registered with it."
+            return {
+                "success": False,
+                "message": "This phone number exceeds the limit of users registered with it.",
+            }
 
         full_name = full_name.split()
         first_name_part = full_name[0]
@@ -108,7 +111,7 @@ def register_real_user(full_name, email, phone_number):
         except frappe.ValidationError as e:
             if "Failed to decrypt key" in str(e):
                 frappe.log_error(
-                    message=f"Encryption error while sending welcome email: {e}",
+                    message=f"Encryption error while sending welcome email: {e} {frappe.get_traceback()}",
                     title="Email Encryption Issue",
                 )
                 frappe.response["http_status_code"] = 206
@@ -118,7 +121,7 @@ def register_real_user(full_name, email, phone_number):
                 }
             else:
                 frappe.log_error(
-                    message=f"Validation error during user creation: {e}",
+                    message=f"Validation error during user creation: {e} {frappe.get_traceback()}",
                     title="User Registration Error",
                 )
                 frappe.response["http_status_code"] = 400
@@ -126,19 +129,19 @@ def register_real_user(full_name, email, phone_number):
 
     except frappe.ValidationError as e:
         frappe.log_error(
-            message=f"Validation error during registration: {e}",
+            message=f"Validation error during registration: {e} {frappe.get_traceback()}",
             title="User Registration Error",
         )
         frappe.response["http_status_code"] = 400
-        return f"Validation error: {e}"
+        return {"success": False, "message": f"Validation error: {e}"}
 
     except Exception as e:
         frappe.log_error(
-            message=f"Unexpected error during registration: First Name: {full_name}, Email: {email}, Phone: {phone_number}. Error: {e}.",
+            message=f"Unexpected error during registration: First Name: {full_name}, Email: {email}, Phone: {phone_number}. Error: {e}. {frappe.get_traceback()}",
             title="User Registration Error",
         )
         frappe.response["http_status_code"] = 500
-        return f"Error: {e}"
+        return {"success": False, "message": f"Error: {e}"}
 
 
 # <---------------- JWT Login API Without Password ---------------->
@@ -749,7 +752,7 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
                     phone_number=number,
                 )
                 print(f"User Registration Response: {user}")
-                if user.get("success") is False:
+                if not isinstance(user, dict) or user.get("success") is False:
                     frappe.response["http_status_code"] = 400
                     return user.get(
                         "message", user.get("message", "User creation failed.")
