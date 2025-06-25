@@ -1021,7 +1021,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
         
         if not website_users:
             frappe.response["http_status_code"] = 404
-            return {
+            return { 
                 "success": False,
                 "message": "Website User not found for the provided phone number.",
             }
