@@ -1153,13 +1153,18 @@ def login_with_google(code):
             params={"id_token": google_id_token},
         )
         if res.status_code != 200:
-            frappe.throw(_("Invalid Google token"))
+            frappe.throw(_("Invalid Google token")) 
 
-        userinfo = {res.json()}
-        email = userinfo.get("email", "vk11@gmail.com")
+        userinfo = res.json()
+        email = userinfo.get("email", "papajikatsa@gmail.com")
         first_name = userinfo.get("given_name", "vishal11")
         last_name = userinfo.get("family_name", "Kumar")
         image_url = userinfo.get("picture", "default_image_url.jpg")
+
+        # email = "papajikatsa@gmail.com"
+        # first_name = "vishal11"
+        # last_name = "Kumar"
+        # image_url = "default_image_url.jpg"
 
         if not email:
             frappe.throw(_("Email is required"))
