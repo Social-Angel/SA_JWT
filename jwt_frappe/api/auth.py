@@ -1013,7 +1013,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
         website_users = frappe.get_all(
             "Website User",
             filters={"mobile_no": number},
-            fields=["name", "email_verified", "number_verified", "user"],
+            fields=["name","full_name","mobile_no", "email_verified", "number_verified", "user",],
         )
         for user in website_users:
             user_email = user.get("name")
