@@ -12,6 +12,7 @@ import frappe, random
 from datetime import timedelta
 from frappe.utils import get_url, random_string, now_datetime, add_to_date
 from requests import RequestException
+from socialangel.api.donor import get_details_of_donor_donations 
 
 # from frappe.utils.password import hash_password
 from frappe.utils.password import passlibctx
@@ -1014,7 +1015,10 @@ def verify_sms_otp_for_mobile_login(number, otp):
             filters={"mobile_no": number},
             fields=["name", "email_verified", "number_verified", "user"],
         )
-
+        for user in website_users:
+            user_email = user.get("name")
+            user["user_summary"] = get_user_summary(user_email) if user_email else "None"
+        
         if not website_users:
             frappe.response["http_status_code"] = 404
             return {
@@ -1410,3 +1414,20 @@ def verify_email_otp(email, otp, need_login=False):
         )
         frappe.local.response.http_status_code = 500
         return "An unexpected error occurred. Please contact support."
+
+
+def get_user_summary(email):
+    user = frappe.get_doc("User", email)
+    is_verified = user.otp_verified
+    avatar = user.user_image
+    data = get_details_of_donor_donations(email)
+    
+    fundraiser = frappe.db.count('Project', {'project_type': 'Fundraiser', 'owner': email})
+
+    return {
+        "is_verified": is_verified,
+        "avatar": avatar,
+        "total_invoices": data.get('total_invoices'),
+        "last_invoice_date": data.get('last_invoice_date'),
+        "fundraiser": fundraiser
+    }
