@@ -1018,7 +1018,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
         for user in website_users:
             user_email = user.get("name")
             user["user_summary"] = get_user_summary(user_email) if user_email else "None"
-        
+            
         if not website_users:
             frappe.response["http_status_code"] = 404
             return { 
