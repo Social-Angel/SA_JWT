@@ -1431,3 +1431,107 @@ def get_user_summary(email):
         "last_invoice_date": data.get('last_invoice_date'),
         "fundraiser": fundraiser
     }
+
+
+""" Send Mail for Reset Password"""      
+@frappe.whitelist(allow_guest=True)
+def forgot_password(email):
+    """
+    Handle forgot password functionality. Generates a reset password link if the user exists.
+    """
+
+    try:
+        user = frappe.db.get_value("User", {"email": email}, "name")
+        if not user:
+            return {"status": "failed", "message": "User not found with this email"}
+
+        from frappe.utils.data import sha256_hash
+
+        key = frappe.generate_hash()
+        hashed_key = sha256_hash(key)
+
+        frappe.db.set_value("User", user, "reset_password_key", hashed_key)
+        frappe.db.set_value(
+            "User", user, "last_reset_password_key_generated_on", now_datetime()
+        )
+
+        reset_url = "/update-password-screen?key=" + key
+        link = get_url(reset_url)
+
+        message = send_reset_password_email(email, link)
+        if message.get("success"):
+            frappe.local.response.http_status_code = 200
+            return {"status": "success", "message": message.get("message")}
+        else:
+            frappe.response.http_status_code = 500
+            frappe.log_error(
+                message=f"Error sending reset password email: {message.get('message')}",
+                title="Forgot Password Error",
+            )
+            return {"status": "failed", "message": message.get("message")}
+
+    except Exception as e:
+        frappe.log_error(
+            message=f"Forgot Password Error: Email={email}, Error={str(e)}",
+            title="Forgot Password Error",
+        )
+        frappe.response.http_status_code = 500
+        return {
+            "status": "failed",
+            "message": "An error occurred while processing your request",
+        }
+
+
+def send_reset_password_email(email, link):
+    try:
+        frappe.sendmail(
+            recipients=email,
+            subject=f"Reset Your Password on SocialAngel",
+            message=f"Click on the link to reset your password: {link}",
+            now=True,
+        )
+        return {"success":True, "message": f"Reset link sent to your email address: {email}"}
+    except Exception as e:
+        frappe.log_error(
+            message=f"Error sending reset password email: {str(e)}",
+            title="Reset Password Email Error",
+        )
+        frappe.response.http_status_code = 500
+        return  {"success": False, "message":f"An error occurred while sending the email. {str(e)}"}
+    
+
+
+@frappe.whitelist(allow_guest=True)
+def reset_password(key, new_password):
+    """
+    Reset the password of the user with the given reset key.
+    """
+    try:
+        user = frappe.db.get_value(
+            "User",
+            {"reset_password_key": frappe.utils.data.sha256_hash(key)},
+            "name",
+        )
+        if not user:
+            return {"status": "failed", "message": "Invalid or expired reset key"}
+
+        user_doc = frappe.get_doc("User", user)
+        user_doc.new_password = new_password
+        user_doc.reset_password_key = ""
+        user_doc.last_reset_password_key_generated_on = None
+        user_doc.otp_verified = 1
+        user_doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        return {"status": "success", "message": "Password reset successfully"}
+
+    except Exception as e:
+        frappe.log_error(
+            message=f"Reset Password Error: Key={key}, Error={str(e)}",
+            title="Reset Password Error",
+        )
+        frappe.response.http_status_code = 500
+        return {
+            "status": "failed",
+            "message": "An error occurred while processing your request",
+        }
