@@ -1469,7 +1469,7 @@ def forgot_password(email):
                 message=f"Error sending reset password email: {message.get('message')}",
                 title="Forgot Password Error",
             )
-            return {"status": "failed", "message": message.get("message")}
+            return {"status": "failed", "message": message.get("message")} 
 
     except Exception as e:
         frappe.log_error(
