@@ -1455,7 +1455,7 @@ def forgot_password(email):
             "User", user, "last_reset_password_key_generated_on", now_datetime()
         )
 
-        reset_url = "/update-password-screen?key=" + key
+        reset_url = "/update-password?key=" + key
         base_url = frappe.db.get_single_value("SocialAngel Setting", "base_url")
         if not base_url:
             return {"status": "failed", "message": "Base URL not configured"}
