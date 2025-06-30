@@ -48,7 +48,7 @@ def on_session_creation(login_manager):
     frappe.local.response['user'] = {
       "full_name": frappe.db.get_value("User", login_manager.user, "full_name"),
       "email": frappe.db.get_value("User", login_manager.user, "email"),
-      "phone": frappe.db.get_value("User", login_manager.user, "phone"),
+      "mobile_no": frappe.db.get_value("User", login_manager.user, "phone"),
       "user_image": frappe.db.get_value("User", login_manager.user, "user_image")
     }
     # frappe.local.response['jwt_user_role'] = frappe.get_roles(login_manager.user)
