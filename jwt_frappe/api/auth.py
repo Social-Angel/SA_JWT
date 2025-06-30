@@ -191,7 +191,7 @@ def login_jwt_without_password(usr, expires_in=60, expire_on=None, device=None):
             "user": {
                 "full_name": frappe.db.get_value("User", usr, "full_name"),
                 "email": frappe.db.get_value("User", usr, "email"),
-                "phone": frappe.db.get_value("User", usr, "phone"),
+                "mobile_no": frappe.db.get_value("User", usr, "phone"),
                 "user_image": frappe.db.get_value("User", usr, "user_image"),
             },
         }
@@ -274,7 +274,7 @@ def login_jwt(usr, pwd, expires_in=60, expire_on=None, device=None):
             "user": {
                 "full_name": frappe.db.get_value("User", usr, "full_name"),
                 "email": frappe.db.get_value("User", usr, "email"),
-                "phone": frappe.db.get_value("User", usr, "phone"),
+                "mobile_no": frappe.db.get_value("User", usr, "phone"),
                 "user_image": frappe.db.get_value("User", usr, "user_image"),
             },
         }
