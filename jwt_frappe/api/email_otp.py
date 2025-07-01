@@ -36,7 +36,7 @@ def email_otp_sender(email):
     """
     try:
         email = str(email).strip()
-        frappe.throw(_("Email address is required."))
+        # frappe.throw(_("Email address is required."))
         if not email:
             frappe.local.response.http_status_code = 400
             return "Email address is required."
