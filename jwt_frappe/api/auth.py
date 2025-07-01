@@ -1418,14 +1418,12 @@ def verify_email_otp(email, otp, need_login=False):
 
 def get_user_summary(email):
     user = frappe.get_doc("User", email)
-    is_verified = user.otp_verified
     avatar = user.user_image
     data = get_details_of_donor_donations(email)
     
     fundraiser = frappe.db.count('Project', {'project_type': 'Fundraiser', 'owner': email})
 
     return {
-        "is_verified": is_verified,
         "avatar": avatar,
         "total_invoices": data.get('total_invoices'),
         "last_invoice_date": data.get('last_invoice_date'),
