@@ -17,6 +17,9 @@ from socialangel.api.donor import get_details_of_donor_donations
 # from frappe.utils.password import hash_password
 from frappe.utils.password import passlibctx
 
+from jwt_frappe.utils.constants import EMAIL_REGEX
+
+
 # <---------------- Separate function ---------------->
 
 
@@ -421,6 +424,13 @@ def create_website_user(email, full_name, password):
     Creates a Website User with the given details if the email is unique and number_verified is not True.
     """
     try:
+            # Email format validation
+        if not re.match(EMAIL_REGEX, email):
+            frappe.log_error(
+                message=f"Invalid email format: {email}",
+                title="User Creation Error"
+            )
+            return None
         # Check if the email is already registered
         existing_user = frappe.db.get_value(
             "Website User",
