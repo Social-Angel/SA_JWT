@@ -1039,6 +1039,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
             ],
         )
         for user in website_users:
+            print("user11",user.get("name"))
             user_email = user.get("name")
             user["user_summary"] = (
                 get_user_summary(user_email) if user_email else "None"
@@ -1461,20 +1462,46 @@ def verify_email_otp(email, otp, uuid=None, need_login=False):
 
 
 def get_user_summary(email):
-    user = frappe.get_doc("User", email)
-    avatar = user.user_image
-    data = get_details_of_donor_donations(email)
+    """
+    Fetches user summary details. Handles cases where the User document does not exist.
+    """
+    try:
+        if not frappe.db.exists("User", email):
+            return {
+                "avatar": None,
+                "total_invoices": 0,
+                "last_invoice_date": None,
+                "fundraiser": 0,
+                "message": f"User {email} does not exist in the User table.",
+                }
 
-    fundraiser = frappe.db.count(
-        "Project", {"project_type": "Fundraiser", "owner": email}
-    )
+        user = frappe.get_doc("User", email)
+        avatar = user.user_image
+        data = get_details_of_donor_donations(email)
 
-    return {
-        "avatar": avatar,
-        "total_invoices": data.get("total_invoices"),
-        "last_invoice_date": data.get("last_invoice_date"),
-        "fundraiser": fundraiser,
-    }
+        fundraiser = frappe.db.count(
+            "Project", {"project_type": "Fundraiser", "owner": email}
+        )
+
+        return {
+            "avatar": avatar,
+            "total_invoices": data.get("total_invoices"),
+            "last_invoice_date": data.get("last_invoice_date"),
+            "fundraiser": fundraiser,
+        }
+
+    except Exception as e:
+        frappe.log_error(
+            message=f"Error fetching user summary for email {email}: {e}",
+            title="Get User Summary Error",
+        )
+        return {
+            "avatar": None,
+            "total_invoices": 0,
+            "last_invoice_date": None,
+            "fundraiser": 0,
+            "message": "An error occurred while fetching user summary.",
+        }
 
 
 """ Send Mail for Reset Password"""
