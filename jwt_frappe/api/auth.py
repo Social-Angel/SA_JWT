@@ -12,7 +12,7 @@ import frappe, random
 from datetime import timedelta
 from frappe.utils import get_url, random_string, now_datetime, add_to_date
 from requests import RequestException
-from socialangel.api.donor import get_details_of_donor_donations 
+from socialangel.api.donor import get_details_of_donor_donations
 
 # from frappe.utils.password import hash_password
 from frappe.utils.password import passlibctx
@@ -206,7 +206,7 @@ def login_jwt_without_password(usr, expires_in=60, expire_on=None, device=None):
 
 
 @frappe.whitelist(allow_guest=True)
-def login_jwt(usr, pwd, expires_in=60, expire_on=None, device=None):
+def login_jwt(usr, pwd, uuid=None, expires_in=60, expire_on=None, device=None):
     """
     Login the usr and return the JWT token
     """
@@ -278,7 +278,9 @@ def login_jwt(usr, pwd, expires_in=60, expire_on=None, device=None):
                 "user_image": frappe.db.get_value("User", usr, "user_image"),
             },
         }
-
+        # If uuid is provided, update the device information
+        if uuid:
+            frappe.db.set_value("Website Visitor", {"uuid": uuid}, "website_user", usr)
         frappe.response["http_status_code"] = 200
         return response
 
@@ -416,7 +418,7 @@ def logout_jwt():
 
 
 @frappe.whitelist(allow_guest=True)
-def create_website_user(email, full_name, password):
+def create_website_user(email, full_name, password, uuid=None):
     """
     Creates a Website User with the given details if the email is unique and number_verified is not True.
     """
@@ -431,14 +433,14 @@ def create_website_user(email, full_name, password):
         if existing_user:
             name, number_verified, user_email, mobile_no = existing_user
             if number_verified:
-                frappe.response.http_status_code = 400
+                frappe.response.http_status_code = 200
                 return {
                     "success": False,
                     "Action_Required": "Login",
                     "message": "Email is already registered and phone number is verified. Cannot create a new user.",
                 }
             else:
-                frappe.response.http_status_code = 400
+                frappe.response.http_status_code = 200
                 return {
                     "success": True,
                     "Action_Required": "verify_mobile",
@@ -473,6 +475,10 @@ def create_website_user(email, full_name, password):
             )
 
             frappe.db.commit()
+            if uuid:
+                frappe.db.set_value(
+                    "Website Visitor", {"uuid": uuid}, "website_user", email
+                )
             frappe.response.http_status_code = 201
             return {
                 "success": True,
@@ -986,6 +992,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
             otp_doc = frappe.get_last_doc(
                 "SMS OTP", filters={"number": number, "status": "Sent"}
             )
+            print("otp_docotp_doc", otp_doc)
         except frappe.DoesNotExistError:
             frappe.response["http_status_code"] = 404
             return {"success": False, "message": "No OTP found for this number."}
@@ -1013,15 +1020,24 @@ def verify_sms_otp_for_mobile_login(number, otp):
         website_users = frappe.get_all(
             "Website User",
             filters={"mobile_no": number},
-            fields=["name","full_name","mobile_no", "email_verified", "number_verified", "user",],
+            fields=[
+                "name",
+                "full_name",
+                "mobile_no",
+                "email_verified",
+                "number_verified",
+                "user",
+            ],
         )
         for user in website_users:
             user_email = user.get("name")
-            user["user_summary"] = get_user_summary(user_email) if user_email else "None"
-            
+            user["user_summary"] = (
+                get_user_summary(user_email) if user_email else "None"
+            )
+
         if not website_users:
             frappe.response["http_status_code"] = 404
-            return { 
+            return {
                 "success": False,
                 "message": "Website User not found for the provided phone number.",
             }
@@ -1047,7 +1063,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
 
 
 @frappe.whitelist(allow_guest=True)
-def mobile_verified_email_login(email, number):
+def mobile_verified_email_login(email, number, uuid=None):
     """
     Login using email and mobile verification status.
     If the email is verified and the mobile number is verified, login the user.
@@ -1116,7 +1132,10 @@ def mobile_verified_email_login(email, number):
         # Check if user exists in the User table
         user_exists = frappe.db.get_value("User", filters={"email": email})
         if user_exists:
-
+            if uuid:
+                frappe.db.set_value(
+                    "Website Visitor", {"uuid": uuid}, "website_user", email
+                )
             login_response = login_jwt_without_password(email)
             frappe.response["http_status_code"] = 200
             return {
@@ -1138,7 +1157,7 @@ def mobile_verified_email_login(email, number):
 
 
 @frappe.whitelist(allow_guest=True)
-def login_with_google(code):
+def login_with_google(code, uuid=None):
     """
     Login using Google OAuth. If the user does not exist, create a Website User,
     then create a User, and finally log them in.
@@ -1157,7 +1176,7 @@ def login_with_google(code):
             params={"id_token": google_id_token},
         )
         if res.status_code != 200:
-            frappe.throw(_("Invalid Google token")) 
+            frappe.throw(_("Invalid Google token"))
 
         userinfo = res.json()
         email = userinfo.get("email", "papajikatsa@gmail.com")
@@ -1263,6 +1282,10 @@ def login_with_google(code):
                 )
                 frappe.db.commit()
                 login_response = login_jwt_without_password(email)
+                if uuid:
+                    frappe.db.set_value(
+                        "Website Visitor", {"uuid": uuid}, "website_user", email
+                    )
                 frappe.response["http_status_code"] = 201
                 return {
                     "success": True,
@@ -1336,7 +1359,7 @@ def send_email_otp(email):
 
 
 @frappe.whitelist(allow_guest=True)
-def verify_email_otp(email, otp, need_login=False):
+def verify_email_otp(email, otp, uuid=None, need_login=False):
     try:
         frappe.set_user("Administrator")
         if not frappe.db.exists("SMS OTP", {"email": email, "otp": otp}):
@@ -1367,13 +1390,17 @@ def verify_email_otp(email, otp, need_login=False):
             }
 
         login_response = login_jwt_without_password(email)
+        if uuid:
+            frappe.db.set_value(
+                "Website Visitor", {"uuid": uuid}, "website_user", email
+            )
         frappe.response["http_status_code"] = 201
         return {
-                "success": True,
-                "message": "Email OTP verified successfully and user logged in.",
-                "Action_Required": "Login",
-                **login_response,
-            }
+            "success": True,
+            "message": "Email OTP verified successfully and user logged in.",
+            "Action_Required": "Login",
+            **login_response,
+        }
 
     except frappe.DoesNotExistError:
         frappe.log_error(
@@ -1420,18 +1447,22 @@ def get_user_summary(email):
     user = frappe.get_doc("User", email)
     avatar = user.user_image
     data = get_details_of_donor_donations(email)
-    
-    fundraiser = frappe.db.count('Project', {'project_type': 'Fundraiser', 'owner': email})
+
+    fundraiser = frappe.db.count(
+        "Project", {"project_type": "Fundraiser", "owner": email}
+    )
 
     return {
         "avatar": avatar,
-        "total_invoices": data.get('total_invoices'),
-        "last_invoice_date": data.get('last_invoice_date'),
-        "fundraiser": fundraiser
+        "total_invoices": data.get("total_invoices"),
+        "last_invoice_date": data.get("last_invoice_date"),
+        "fundraiser": fundraiser,
     }
 
 
-""" Send Mail for Reset Password"""      
+""" Send Mail for Reset Password"""
+
+
 @frappe.whitelist(allow_guest=True)
 def forgot_password(email):
     """
@@ -1469,7 +1500,7 @@ def forgot_password(email):
                 message=f"Error sending reset password email: {message.get('message')}",
                 title="Forgot Password Error",
             )
-            return {"status": "failed", "message": message.get("message")} 
+            return {"status": "failed", "message": message.get("message")}
 
     except Exception as e:
         frappe.log_error(
@@ -1491,15 +1522,20 @@ def send_reset_password_email(email, link):
             message=f"Click on the link to reset your password: {link}",
             now=True,
         )
-        return {"success":True, "message": f"Reset link sent to your email address: {email}"}
+        return {
+            "success": True,
+            "message": f"Reset link sent to your email address: {email}",
+        }
     except Exception as e:
         frappe.log_error(
             message=f"Error sending reset password email: {str(e)}",
             title="Reset Password Email Error",
         )
         frappe.response.http_status_code = 500
-        return  {"success": False, "message":f"An error occurred while sending the email. {str(e)}"}
-    
+        return {
+            "success": False,
+            "message": f"An error occurred while sending the email. {str(e)}",
+        }
 
 
 @frappe.whitelist(allow_guest=True)
