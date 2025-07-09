@@ -426,11 +426,10 @@ def create_website_user(email, full_name, password, uuid=None):
     Creates a Website User with the given details if the email is unique and number_verified is not True.
     """
     try:
-            # Email format validation
+        # Email format validation
         if not re.match(EMAIL_REGEX, email):
             frappe.log_error(
-                message=f"Invalid email format: {email}",
-                title="User Creation Error"
+                message=f"Invalid email format: {email}", title="User Creation Error"
             )
             return None
         # Check if the email is already registered
@@ -1208,6 +1207,10 @@ def login_with_google(code, uuid=None):
             # Login the user if they exist
             login_response = login_jwt_without_password(email)
             frappe.response["http_status_code"] = 200
+            if uuid:
+                frappe.db.set_value(
+                    "Website Visitor", {"uuid": uuid}, "website_user", email
+                )
             return {
                 "success": True,
                 "Action_Required": "Login",
@@ -1260,6 +1263,10 @@ def login_with_google(code, uuid=None):
 
                 # Login the newly created user
                 login_response = login_jwt_without_password(email)
+                if uuid:
+                    frappe.db.set_value(
+                        "Website Visitor", {"uuid": uuid}, "website_user", email
+                    )
                 frappe.response["http_status_code"] = 201
                 return {
                     "success": True,
