@@ -192,10 +192,10 @@ def login_jwt_without_password(usr, expires_in=60, expire_on=None, device=None):
                 "jwt_refresh_expiry_time": jwt_refresh_expiry_time,
             },
             "user": {
-                "full_name": frappe.db.get_value("User", usr, "full_name"),
-                "email": frappe.db.get_value("User", usr, "email"),
-                "mobile_no": frappe.db.get_value("User", usr, "phone"),
-                "user_image": frappe.db.get_value("User", usr, "user_image"),
+                "full_name": frappe.db.get_value("Website User", usr, "full_name"),
+                "email": frappe.db.get_value("Website User", usr, "name"),
+                "mobile_no": frappe.db.get_value("Website User", usr, "mobile_no"),
+                "user_image": frappe.db.get_value("Website User", usr, "user_image"),
             },
         }
 
@@ -1044,7 +1044,6 @@ def verify_sms_otp_for_mobile_login(number, otp):
             ],
         )
         for user in website_users:
-            print("user11",user.get("name"))
             user_email = user.get("name")
             user["user_summary"] = (
                 get_user_summary(user_email) if user_email else "None"
