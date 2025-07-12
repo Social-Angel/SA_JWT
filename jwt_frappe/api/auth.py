@@ -431,7 +431,12 @@ def create_website_user(email, full_name, password, uuid=None):
             frappe.log_error(
                 message=f"Invalid email format: {email}", title="User Creation Error"
             )
-            return None
+            frappe.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": _("Invalid email format. Please provide a valid email address."),
+            }
         # Check if the email is already registered
         existing_user = frappe.db.get_value(
             "Website User",
