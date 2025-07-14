@@ -4,21 +4,18 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from frappe.auth import LoginManager
 import datetime
 from frappe import _
-# from frappe.utils import get_site_config
 
 
 
-# site_config = get_site_config()
-
-jwt_secret_key = frappe.local.conf.jwt_secret_key
-
-
-
-print(f"JWT Secret Key: {jwt_secret_key}")
 
 @frappe.whitelist(allow_guest=True)
 def generate_jwt_token(user, expires_in=60):
 
+    jwt_secret_key = frappe.local.conf.jwt_secret_key
+    if not jwt_secret_key:
+        frappe.log_error(message="JWT Secret Key is not configured. Add jwt_secret_key in site config.json", title="JWT Configuration Error")
+        raise frappe.ValidationError(_("JWT Secret Key is not configured."))
+    
     # Get User details for the JWT payload
     if not frappe.db.exists("User", user):
         raise frappe.ValidationError(_("Invalid User"))
@@ -28,7 +25,6 @@ def generate_jwt_token(user, expires_in=60):
         raise frappe.ValidationError(_("User is disabled"))
     
 
-    secret_key="your_secret_here"
     payload = {
         "user": user_doc.name,
         "email": user_doc.email,
@@ -51,13 +47,18 @@ def generate_jwt_token(user, expires_in=60):
         }
     }
 
-    token = jwt.encode(payload, secret_key, algorithm="HS256")
+    token = jwt.encode(payload, jwt_secret_key, algorithm="HS256")
     return token
 
 
 @frappe.whitelist(allow_guest=True)
 def decode_jwt_token(token, token_type , secret_key="your_secret_here"):
     try:
+        jwt_secret_key = frappe.local.conf.jwt_secret_key
+        if not jwt_secret_key:
+            frappe.log_error(message="JWT Secret Key is not configured. Add jwt_secret_key in site config.json", title="JWT Configuration Error")
+            raise frappe.ValidationError(_("JWT Secret Key is not configured."))
+
         if not token:
             return {"success": False, "message": "Token is required"}
         
@@ -66,9 +67,9 @@ def decode_jwt_token(token, token_type , secret_key="your_secret_here"):
         except frappe.DoesNotExistError:
             return {"success": False, "message": "Token not found"}
         if token_type == "refresh_token":
-            decoded = jwt.decode(access_token.jwt_refresh_token, secret_key, algorithms=["HS256"])
+            decoded = jwt.decode(access_token.jwt_refresh_token, jwt_secret_key, algorithms=["HS256"])
         elif token_type == "access_token":
-            decoded = jwt.decode(access_token.jwt_access_token, secret_key, algorithms=["HS256"])
+            decoded = jwt.decode(access_token.jwt_access_token, jwt_secret_key, algorithms=["HS256"])
         else:
             return {
                 {"success": False, "message": "Token Type Is Wrong"}
