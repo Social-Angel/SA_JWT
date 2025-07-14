@@ -433,7 +433,9 @@ def create_website_user(email, full_name, password, uuid=None):
             return {
                 "status": "error",
                 "data": None,
-                "message": _("Invalid email format. Please provide a valid email address."),
+                "message": _(
+                    "Invalid email format. Please provide a valid email address."
+                ),
             }
         # Check if the email is already registered
         existing_user = frappe.db.get_value(
@@ -1050,7 +1052,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
                 "success": False,
                 "message": "Website User not found for the provided phone number.",
             }
-
+        frappe.db.set_value("Website User", {"mobile_no": number}, "number_verified", 1)
         frappe.response["http_status_code"] = 200
         return {
             "success": True,
@@ -1472,7 +1474,7 @@ def get_user_summary(email):
                 "last_invoice_date": None,
                 "fundraiser": 0,
                 "message": f"User {email} does not exist in the User table.",
-                }
+            }
 
         user = frappe.get_doc("User", email)
         avatar = user.user_image
