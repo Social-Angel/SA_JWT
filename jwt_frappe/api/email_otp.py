@@ -266,7 +266,6 @@ def complete_email_login(email, otp, for_login =False , uuid=None):
         user = frappe.new_doc("User")
         user.update(
             {
-                "doctype": "User",
                 "email": email,
                 "first_name": website_user.full_name.split(" ")[0],
                 "last_name": " ".join(website_user.full_name.split(" ")[1:]),
@@ -413,8 +412,7 @@ def complete_email_verify_login(email, otp, uuid=None):
         user = frappe.new_doc("User")
         user.update(
             {
-                "doctype": "User",
-                "email": email,
+                "email": email.lower(),
                 "first_name": website_user.full_name.split(" ")[0],
                 "last_name": " ".join(website_user.full_name.split(" ")[1:]),
                 "phone": website_user.phone,
