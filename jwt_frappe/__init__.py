@@ -21,8 +21,6 @@ def on_session_creation(login_manager):
     # Get the JWT expiry time from JWT settings 
     jwt_access_expiry_time = frappe.db.get_single_value("JWT Settings", "jwt_access_expiry_time")
     jwt_refresh_expiry_time = frappe.db.get_single_value("JWT Settings", "jwt_refresh_expiry_time")
-    print("jwt_access_expiry_time", jwt_access_expiry_time)
-    print("jwt_refresh_expiry_time", jwt_refresh_expiry_time)
     jwt_response = get_bearer_token(
         user=login_manager.user, 
         jwt_access_expiry_time=jwt_access_expiry_time, 

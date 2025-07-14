@@ -313,7 +313,6 @@ def refresh_token():
             return {"message": "Unauthorized access. Token is missing."}
 
         JWT_Data = decode_jwt_token(token, token_type="refresh_token")
-        print("JWT_Data", JWT_Data)
         if (
             JWT_Data.get("success") is False
             and JWT_Data.get("message") == "Token not found"
@@ -403,7 +402,6 @@ def logout_jwt():
         if not token:
             frappe.response["http_status_code"] = 401
             return {"message": "Unauthorized access. Token is missing."}
-        print("tokentoken", token)
         # Clear the token from the database
         token_doc = frappe.get_doc("OAuth Bearer Token", token)
         if not token_doc:
@@ -443,7 +441,6 @@ def create_website_user(email, full_name, password, uuid=None):
             filters={"email": email},
             fieldname=["name", "number_verified", "email", "mobile_no"],
         )
-        print(f"Existing User: {existing_user}")
         if existing_user:
             name, number_verified, user_email, mobile_no = existing_user
             if number_verified:
@@ -772,7 +769,6 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
                     email=email,
                     phone_number=number,
                 )
-                print(f"User Registration Response: {user}")
                 if not isinstance(user, dict) or user.get("success") is False:
                     frappe.response["http_status_code"] = 400
                     return user.get(
@@ -1006,7 +1002,6 @@ def verify_sms_otp_for_mobile_login(number, otp):
             otp_doc = frappe.get_last_doc(
                 "SMS OTP", filters={"number": number, "status": "Sent"}
             )
-            print("otp_docotp_doc", otp_doc)
         except frappe.DoesNotExistError:
             frappe.response["http_status_code"] = 404
             return {"success": False, "message": "No OTP found for this number."}

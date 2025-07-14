@@ -228,7 +228,7 @@ def send_complete_email_otp(email):
 
 
 @frappe.whitelist(allow_guest=True)
-def complete_email_login(email, otp, uuid=None):
+def complete_email_login(email, otp, for_login =False , uuid=None):
     try:
         otp = str(otp).strip()
         email = str(email).strip()
@@ -285,9 +285,10 @@ def complete_email_login(email, otp, uuid=None):
             user.save(ignore_permissions=True)
 
             frappe.db.set_value("SMS OTP", stored_otp.name, "status", "Verified")
-            frappe.db.commit()
-            login_response = login_jwt_without_password(email)
-            frappe.response["http_status_code"] = 201
+            frappe.db.commit()  
+            if for_login:
+                login_response = login_jwt_without_password(email)
+                frappe.response["http_status_code"] = 201
             
             try:
                 if uuid:
@@ -302,7 +303,7 @@ def complete_email_login(email, otp, uuid=None):
                 "success": True,
                 "message": "OTP verified successfully and User Created.",
                 "Action_Required": "Login",
-                **login_response,
+                **(login_response if for_login else {}),
             }
         else:
             frappe.local.response.http_status_code = 500

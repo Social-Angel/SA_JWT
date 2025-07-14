@@ -4,7 +4,17 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from frappe.auth import LoginManager
 import datetime
 from frappe import _
+# from frappe.utils import get_site_config
 
+
+
+# site_config = get_site_config()
+
+jwt_secret_key = frappe.local.conf.jwt_secret_key
+
+
+
+print(f"JWT Secret Key: {jwt_secret_key}")
 
 @frappe.whitelist(allow_guest=True)
 def generate_jwt_token(user, expires_in=60):
@@ -17,7 +27,6 @@ def generate_jwt_token(user, expires_in=60):
     if not user_doc.enabled:
         raise frappe.ValidationError(_("User is disabled"))
     
-
 
     secret_key="your_secret_here"
     payload = {
