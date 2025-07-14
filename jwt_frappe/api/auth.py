@@ -46,6 +46,7 @@ def register_real_user(full_name, email, phone_number):
     Registers a new user. If the user already exists, appropriate error messages are returned.
     """
     try:
+        email = str(email).strip().lower()
         if not email:
             frappe.response["http_status_code"] = 400
             return {"success": False, "message": "Email is required"}
@@ -157,7 +158,7 @@ def login_jwt_without_password(usr, expires_in=60, expire_on=None, device=None):
     """
     try:
         frappe.flags.skip_on_session_creation = True
-
+        
         # Check if the user are provided
         if not usr:
             frappe.response["http_status_code"] = 400
@@ -425,9 +426,10 @@ def create_website_user(email, full_name, password, uuid=None):
     """
     try:
         # Email format validation
+        email = str(email).strip().lower()
         if not re.match(EMAIL_REGEX, email):
             frappe.log_error(
-                message=f"Invalid email format: {email}", title="User Creation Error"
+                message=f"Invalid email format: {email.lower()}", title="User Creation Error"
             )
             frappe.response.http_status_code = 403
             return {
@@ -440,7 +442,7 @@ def create_website_user(email, full_name, password, uuid=None):
         # Check if the email is already registered
         existing_user = frappe.db.get_value(
             "Website User",
-            filters={"email": email},
+            filters={"email": email.lower()},
             fieldname=["name", "number_verified", "email", "mobile_no"],
         )
         if existing_user:
@@ -471,7 +473,7 @@ def create_website_user(email, full_name, password, uuid=None):
             user_doc = frappe.get_doc(
                 {
                     "doctype": "Website User",
-                    "email": email,
+                    "email": email.lower(),
                     "full_name": full_name,
                     # "password": hashed_password,
                 }
@@ -484,7 +486,7 @@ def create_website_user(email, full_name, password, uuid=None):
                     INSERT INTO `__Auth` (name, doctype,fieldname, password, encrypted)
                     VALUES (%s, %s, %s, %s, %s)
                 """,
-                (email, "Website User", "password", hashed_password, 0),
+                (email.lower(), "Website User", "password", hashed_password, 0),
             )
 
             frappe.db.commit()
@@ -523,6 +525,7 @@ def send_sms_otp(number, website_user):
     try:
 
         # Validate the website user
+        website_user = str(website_user).strip().lower()
         if not website_user:
             frappe.response.http_status_code = 400
             return {"success": False, "message": "Website User is required."}
@@ -689,6 +692,7 @@ def send_sms_otp(number, website_user):
 def verify_sms_otp_login(number, otp, website_user_email=None):
     """Verifies the last OTP stored in the SMS OTP document within 5 minutes."""
     try:
+        website_user_email = str(website_user_email).strip().lower()
         # Check if the number is provided
         if not number:
             frappe.response["http_status_code"] = 400
@@ -836,6 +840,7 @@ def send_sms_otp_for_mobile_login(number):
     """
     try:
         # Check the phone number
+        number = str(number).strip()
         if not number:
             frappe.response.http_status_code = 400
             return {"success": False, "message": "Phone number is required."}
@@ -984,6 +989,8 @@ def send_sms_otp_for_mobile_login(number):
 def verify_sms_otp_for_mobile_login(number, otp):
     """Verifies the last OTP stored in the SMS OTP document within 5 minutes."""
     try:
+        number = str(number).strip()
+        otp = str(otp).strip()
         # Check if the number is provided
         if not number:
             frappe.response["http_status_code"] = 400
@@ -1053,6 +1060,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
                 "message": "Website User not found for the provided phone number.",
             }
         frappe.db.set_value("Website User", {"mobile_no": number}, "number_verified", 1)
+        frappe.db.commit()
         frappe.response["http_status_code"] = 200
         return {
             "success": True,
@@ -1081,6 +1089,8 @@ def mobile_verified_email_login(email, number, uuid=None):
     If the email is not verified or the mobile number is not verified, return an error message.
     """
     try:
+        email = str(email).strip().lower()
+        number = str(number).strip()
         if not number:
             frappe.response["http_status_code"] = 400
             return {"success": False, "message": "Phone number is required."}
@@ -1333,6 +1343,8 @@ def send_email_otp(email):
     Generates and stores OTP in the User DocType, then sends it via email.
     """
     try:
+        email = str(email).strip().lower()
+
         if not email:
             frappe.local.response.http_status_code = 400
             return "Email address is required."
@@ -1380,6 +1392,8 @@ def send_email_otp(email):
 @frappe.whitelist(allow_guest=True)
 def verify_email_otp(email, otp, uuid=None, need_login=False):
     try:
+        email = str(email).strip().lower()
+        otp = str(otp).strip()
         frappe.set_user("Administrator")
         if not frappe.db.exists("SMS OTP", {"email": email, "otp": otp}):
             frappe.local.response.http_status_code = 403
@@ -1467,6 +1481,7 @@ def get_user_summary(email):
     Fetches user summary details. Handles cases where the User document does not exist.
     """
     try:
+        email = str(email).strip().lower()
         if not frappe.db.exists("User", email):
             return {
                 "avatar": None,
@@ -1515,6 +1530,7 @@ def forgot_password(email):
     """
 
     try:
+        email = str(email).strip().lower()
         user = frappe.db.get_value("User", {"email": email}, "name")
         if not user:
             return {"status": "failed", "message": "User not found with this email"}

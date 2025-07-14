@@ -21,6 +21,7 @@ from requests import RequestException
 @frappe.whitelist(allow_guest=True)
 def check_email_exists(email):
     try:
+        email = str(email).strip().lower()
         # Check if the email exists in the User doctype
         exists = frappe.db.exists("Website User", {"email": email })
         return {"is_exist": bool(exists)}
@@ -38,6 +39,7 @@ def check_phone_exists(number):
     Checks if the provided phone number exists in the User DocType.
     """
     try:
+        number = str(number).strip()
         # user = frappe.db.get_value("Website User", filters={"mobile_no": number}, fieldname=["name"])
         is_number_exists = frappe.db.exists("Website User", {"mobile_no": number })
         return {

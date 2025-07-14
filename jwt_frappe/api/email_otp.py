@@ -262,26 +262,28 @@ def complete_email_login(email, otp, for_login =False , uuid=None):
 
         website_user = frappe.get_doc("Website User", email.lower())
 
-
-        user = frappe.new_doc("User")
-        user.update(
-            {
-                "email": email,
-                "first_name": website_user.full_name.split(" ")[0],
-                "last_name": " ".join(website_user.full_name.split(" ")[1:]),
-                "phone": website_user.phone,
-                "gender": website_user.gender,
-                "birth_date": website_user.dob,
-                "send_welcome_email": 1,
-            }
-        )
+        if not website_user.user:
+            user = frappe.new_doc("User")
+            user.update(
+                {
+                    "email": email,
+                    "first_name": website_user.full_name.split(" ")[0],
+                    "last_name": " ".join(website_user.full_name.split(" ")[1:]),
+                    "phone": website_user.phone,
+                    "gender": website_user.gender,
+                    "birth_date": website_user.dob,
+                    "send_welcome_email": 1,
+                }
+            )
+            user.save(ignore_permissions=True)
+        else:
+            user = frappe.get_doc("User", website_user.user)
         if user:
             website_user.email_verified = 1
             website_user.number_verified = 1
             website_user.user = email
 
             website_user.save(ignore_permissions=True)
-            user.save(ignore_permissions=True)
 
             frappe.db.set_value("SMS OTP", stored_otp.name, "status", "Verified")
             frappe.db.commit()  
@@ -408,25 +410,28 @@ def complete_email_verify_login(email, otp, uuid=None):
 
         website_user = frappe.get_doc("Website User", email.lower())
 
+        if not website_user.user:
+            user = frappe.new_doc("User")
+            user.update(
+                {
+                    "email": email.lower(),
+                    "first_name": website_user.full_name.split(" ")[0],
+                    "last_name": " ".join(website_user.full_name.split(" ")[1:]),
+                    "phone": website_user.phone,
+                    "gender": website_user.gender,
+                    "birth_date": website_user.dob,
+                    "send_welcome_email": 1,
+                }
+            )
+            user.save(ignore_permissions=True)
+        else:
+            user = frappe.get_doc("User", website_user.user)
 
-        user = frappe.new_doc("User")
-        user.update(
-            {
-                "email": email.lower(),
-                "first_name": website_user.full_name.split(" ")[0],
-                "last_name": " ".join(website_user.full_name.split(" ")[1:]),
-                "phone": website_user.phone,
-                "gender": website_user.gender,
-                "birth_date": website_user.dob,
-                "send_welcome_email": 1,
-            }
-        )
         if user:
             website_user.email_verified = 1
             website_user.user = email
 
             website_user.save(ignore_permissions=True)
-            user.save(ignore_permissions=True)
 
             frappe.db.set_value("SMS OTP", stored_otp.name, "status", "Verified")
             frappe.db.commit()  
