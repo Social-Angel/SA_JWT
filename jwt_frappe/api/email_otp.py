@@ -34,7 +34,7 @@ def email_otp_sender(email):
     Generates and stores OTP in the User DocType, then sends it via email.
     """
     try:
-        email = str(email).strip()
+        email = str(email).strip().lower()
         # frappe.throw(_("Email address is required."))
         if not email:
             frappe.local.response.http_status_code = 400
@@ -87,7 +87,7 @@ def email_otp_sender(email):
 def email_otp_verifier(email, otp, need_login=False):
     try:
         otp = str(otp).strip()
-        email = str(email).strip()
+        email = str(email).strip().lower()
         frappe.set_user("Administrator")
         if not frappe.db.exists("SMS OTP", {"email": email, "otp": otp}):
             frappe.local.response.http_status_code = 403
@@ -161,7 +161,7 @@ def send_complete_email_otp(email):
     Generates and stores OTP in the Website User DocType, then sends it via email.
     """
     try:
-        email = str(email).strip()
+        email = str(email).strip().lower()
         # frappe.throw(_("Email address is required."))
         if not email:
             frappe.local.response.http_status_code = 400
@@ -231,7 +231,7 @@ def send_complete_email_otp(email):
 def complete_email_login(email, otp, for_login =False , uuid=None):
     try:
         otp = str(otp).strip()
-        email = str(email).strip()
+        email = str(email).strip().lower()
         frappe.set_user("Administrator")
         if not frappe.db.exists("SMS OTP", {"email": email, "otp": otp}):
             frappe.local.response.http_status_code = 403
@@ -377,7 +377,7 @@ def complete_email_login(email, otp, for_login =False , uuid=None):
 def complete_email_verify_login(email, otp, uuid=None):
     try:
         otp = str(otp).strip()
-        email = str(email).strip()
+        email = str(email).strip().lower()
         frappe.set_user("Administrator")
         if not frappe.db.exists("SMS OTP", {"email": email, "otp": otp}):
             frappe.local.response.http_status_code = 403
