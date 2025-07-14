@@ -22,7 +22,7 @@ from requests import RequestException
 def check_email_exists(email):
     try:
         # Check if the email exists in the User doctype
-        exists = frappe.db.exists("Website User", {"email": email , "email_verified": 1})
+        exists = frappe.db.exists("Website User", {"email": email })
         return {"is_exist": bool(exists)}
     except Exception as e:
         frappe.log_error(message=str(e), title="Error Checking Email Existence")
@@ -39,7 +39,7 @@ def check_phone_exists(number):
     """
     try:
         # user = frappe.db.get_value("Website User", filters={"mobile_no": number}, fieldname=["name"])
-        is_number_exists = frappe.db.exists("Website User", {"mobile_no": number , "number_verified": 1})
+        is_number_exists = frappe.db.exists("Website User", {"mobile_no": number })
         return {
             "is_exists": bool(is_number_exists)
         }
