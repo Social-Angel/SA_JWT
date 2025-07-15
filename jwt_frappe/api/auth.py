@@ -1203,7 +1203,7 @@ def login_with_google(code, uuid=None):
         email = userinfo.get("email", "papajikatsa@gmail.com")
         first_name = userinfo.get("given_name", "vishal11")
         last_name = userinfo.get("family_name", "Kumar")
-        image_url = userinfo.get("picture", "default_image_url.jpg")
+        image_url = "" #userinfo.get("picture", "default_image_url.jpg")
 
         # email = "papajikatsa@gmail.com"
         # first_name = "vishal11"
