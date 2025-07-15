@@ -409,7 +409,29 @@ def complete_email_verify_login(email, otp, uuid=None):
             }
 
         website_user = frappe.get_doc("Website User", email.lower())
-
+        
+        if not website_user.mobile_no:
+            website_user.email_verified = 1
+            website_user.save(ignore_permissions=True)
+            frappe.db.set_value("SMS OTP", stored_otp.name, "status", "Verified")
+            frappe.db.commit()
+            frappe.local.response.http_status_code = 200
+            return {
+                "status": "error",
+                "mobile_no": None,
+                "message": "Email Verified and Mobile number not found.",
+            }
+        if not website_user.number_verified:
+            website_user.email_verified = 1
+            website_user.save(ignore_permissions=True)
+            frappe.db.set_value("SMS OTP", stored_otp.name, "status", "Verified")
+            frappe.db.commit()
+            frappe.local.response.http_status_code = 403
+            return {
+                "status": "error",
+                "mobile_no": website_user.mobile_no,
+                "message": "Email Verified and Mobile number not verified.",
+            }
         if not website_user.user:
             user = frappe.new_doc("User")
             user.update(
