@@ -426,7 +426,7 @@ def complete_email_verify_login(email, otp, uuid=None):
             website_user.save(ignore_permissions=True)
             frappe.db.set_value("SMS OTP", stored_otp.name, "status", "Verified")
             frappe.db.commit()
-            frappe.local.response.http_status_code = 403
+            frappe.local.response.http_status_code = 200
             return {
                 "status": "error",
                 "mobile_no": website_user.mobile_no,
