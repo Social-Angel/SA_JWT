@@ -16,199 +16,12 @@ from socialangel.api.donor import get_details_of_donor_donations
 
 # from frappe.utils.password import hash_password
 from frappe.utils.password import passlibctx
-
 from jwt_frappe.utils.constants import EMAIL_REGEX
+from jwt_frappe.domain.auth_domain import generateOTP ,register_real_user,login_jwt_without_password ,get_user_summary ,get_user_summary, send_reset_password_email ,reset_password
 
 
-# <---------------- Separate function ---------------->
-
-
-def generateOTP(digit):
-    """
-    Generates a random OTP of the specified digit length.
-    """
-    try:
-        digits = "0123456789"
-        return "".join(random.choice(digits) for _ in range(digit))
-    except Exception as e:
-        frappe.response.http_status_code = 500
-        frappe.log_error(
-            message=f"Error generating OTP: {e}", title="OTP Generation Error"
-        )
-        return ""
-
-
-# <---------------- Creating Real Frappe User (This is not a API Depend on verify_sms_otp_login )  ---------------->
-
-
-def register_real_user(full_name, email, phone_number):
-    """
-    Registers a new user. If the user already exists, appropriate error messages are returned.
-    """
-    try:
-        email = str(email).strip().lower()
-        if not email:
-            frappe.response["http_status_code"] = 400
-            return {"success": False, "message": "Email is required"}
-
-        if not phone_number:
-            frappe.response["http_status_code"] = 400
-            return {"success": False, "message": "Phone number is required"}
-        if not re.match(r"^\+?[0-9]{10,15}$", phone_number):
-            frappe.response["http_status_code"] = 400
-            return {
-                "success": False,
-                "message": "Invalid phone number format. It should be 10 to 15 digits long.",
-            }
-        if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
-            frappe.response["http_status_code"] = 400
-            return {
-                "success": False,
-                "message": "Invalid email format. Please provide a valid email address.",
-            }
-
-        user = frappe.db.get_value("User", email, fieldname=["name"])
-        if user:
-            frappe.response["http_status_code"] = 409
-            return {
-                "success": False,
-                "message": f"User with email {email} already exists. Please use a different email or login.",
-            }
-
-        users_count_with_same_phone = frappe.db.count("User", {"phone": phone_number})
-        if users_count_with_same_phone > 5:
-            frappe.response["http_status_code"] = 409
-            return {
-                "success": False,
-                "message": "This phone number exceeds the limit of users registered with it.",
-            }
-
-        full_name = full_name.split()
-        first_name_part = full_name[0]
-        last_name_part = " ".join(full_name[1:]) if len(full_name) > 1 else ""
-        user_doc = frappe.get_doc(
-            {
-                "doctype": "User",
-                "email": email,
-                "first_name": first_name_part,
-                "last_name": last_name_part,
-                "phone": phone_number,
-                "send_welcome_email": 1,
-                # "new_password": password,
-                "number_verified": 1,
-            }
-        )
-
-        try:
-            user_doc.insert(ignore_permissions=True)
-            frappe.db.commit()
-
-            frappe.response["http_status_code"] = 201
-            return {
-                "success": True,
-                "message": "User created successfully",
-                "user_doc": {
-                    "name": user_doc.name,
-                    "email": user_doc.email,
-                    "phone": user_doc.phone,
-                },
-            }
-        except frappe.ValidationError as e:
-            if "Failed to decrypt key" in str(e):
-                frappe.log_error(
-                    message=f"Encryption error while sending welcome email: {e} {frappe.get_traceback()}",
-                    title="Email Encryption Issue",
-                )
-                frappe.response["http_status_code"] = 206
-                return {
-                    "success": True,
-                    "message": f"User created successfully, but failed to send welcome email: {e}",
-                }
-            else:
-                frappe.log_error(
-                    message=f"Validation error during user creation: {e} {frappe.get_traceback()}",
-                    title="User Registration Error",
-                )
-                frappe.response["http_status_code"] = 400
-                return {"success": False, "message": f"Validation error: {e}"}
-
-    except frappe.ValidationError as e:
-        frappe.log_error(
-            message=f"Validation error during registration: {e} {frappe.get_traceback()}",
-            title="User Registration Error",
-        )
-        frappe.response["http_status_code"] = 400
-        return {"success": False, "message": f"Validation error: {e}"}
-
-    except Exception as e:
-        frappe.log_error(
-            message=f"Unexpected error during registration: First Name: {full_name}, Email: {email}, Phone: {phone_number}. Error: {e}. {frappe.get_traceback()}",
-            title="User Registration Error",
-        )
-        frappe.response["http_status_code"] = 500
-        return {"success": False, "message": f"Error: {e}"}
-
-
-# <---------------- JWT Login API Without Password ---------------->
-
-
-def login_jwt_without_password(usr, expires_in=60, expire_on=None, device=None):
-    """
-    Login the usr and return the JWT token without password
-    """
-    try:
-        frappe.flags.skip_on_session_creation = True
-        
-        # Check if the user are provided
-        if not usr:
-            frappe.response["http_status_code"] = 400
-            return {"Success": False, "message": _("Username is required")}
-
-        # Check if the user exists
-        if not frappe.db.exists("User", usr):
-            frappe.response["http_status_code"] = 400
-            return {"Success": False, "message": _("Invalid User")}
-
-        # Generate JWT tokens
-        jwt_access_expiry_time = frappe.db.get_single_value(
-            "JWT Settings", "jwt_access_expiry_time"
-        )
-        jwt_refresh_expiry_time = frappe.db.get_single_value(
-            "JWT Settings", "jwt_refresh_expiry_time"
-        )
-        jwt_response = get_bearer_token(
-            user=usr,
-            jwt_access_expiry_time=jwt_access_expiry_time,
-            jwt_refresh_expiry_time=jwt_refresh_expiry_time,
-        )
-
-        # Prepare response
-        response = {
-            "jwt_access": {
-                "jwt_access_token": jwt_response["token"]["access_token"],
-                "jwt_access_expiry_time": jwt_access_expiry_time,
-            },
-            "jwt_refresh": {
-                "jwt_refresh_token": jwt_response["jwt_refresh_token"],
-                "jwt_refresh_expiry_time": jwt_refresh_expiry_time,
-            },
-            "user": {
-                "full_name": frappe.db.get_value("Website User", usr, "full_name"),
-                "email": frappe.db.get_value("Website User", usr, "name"),
-                "mobile_no": frappe.db.get_value("Website User", usr, "mobile_no"),
-                "user_image": frappe.db.get_value("Website User", usr, "user_image"),
-            },
-        }
-
-        frappe.response["http_status_code"] = 200
-        return response
-
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "JWT Login Error")
-        frappe.response["http_status_code"] = 500
-        return {"message": _("Internal Server Error")}
-
-
+# True 
+# Api 1
 @frappe.whitelist(allow_guest=True)
 def login_jwt(usr, pwd, uuid=None, expires_in=60, expire_on=None, device=None):
     """
@@ -298,7 +111,8 @@ def login_jwt(usr, pwd, uuid=None, expires_in=60, expire_on=None, device=None):
         frappe.response["http_status_code"] = 500
         return {"message": _("Internal Server Error")}
 
-
+# True
+# Api 2
 @frappe.whitelist(allow_guest=True)
 def refresh_token():
     """
@@ -390,7 +204,7 @@ def refresh_token():
         frappe.log_error(frappe.get_traceback(), "JWT Refresh Token Error")
         frappe.throw(_("Failed to refresh token"))
 
-
+# True
 @frappe.whitelist(allow_guest=True)
 def logout_jwt():
     """
@@ -418,7 +232,8 @@ def logout_jwt():
         frappe.log_error(frappe.get_traceback(), "JWT Logout Error")
         frappe.throw(_("Failed to logout"))
 
-
+# True
+# Api 3
 @frappe.whitelist(allow_guest=True)
 def create_website_user(email, full_name, password, uuid=None):
     """
@@ -429,7 +244,8 @@ def create_website_user(email, full_name, password, uuid=None):
         email = str(email).strip().lower()
         if not re.match(EMAIL_REGEX, email):
             frappe.log_error(
-                message=f"Invalid email format: {email.lower()}", title="User Creation Error"
+                message=f"Invalid email format: {email.lower()}",
+                title="User Creation Error",
             )
             frappe.response.http_status_code = 403
             return {
@@ -478,7 +294,7 @@ def create_website_user(email, full_name, password, uuid=None):
                     # "password": hashed_password,
                 }
             )
-
+            user_doc.append("roles", {"doctype": "Roles Table", "roles": "Website User"})
             user_doc.insert(ignore_permissions=True)
 
             auth_doc = frappe.db.sql(
@@ -515,7 +331,8 @@ def create_website_user(email, full_name, password, uuid=None):
 
 # <---------------- Mobile SMS Vefify for creating website user ---------------->
 
-
+# 
+# Api 4
 @frappe.whitelist(allow_guest=True)
 def send_sms_otp(number, website_user):
     """
@@ -687,7 +504,7 @@ def send_sms_otp(number, website_user):
 
 # <---------------- (1.) Verify SMS OTP and  (2.) Create Real User and (3.) Login  ---------------->
 
-
+# Api 5
 @frappe.whitelist(allow_guest=True)
 def verify_sms_otp_login(number, otp, website_user_email=None):
     """Verifies the last OTP stored in the SMS OTP document within 5 minutes."""
@@ -762,18 +579,19 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
             website_user = frappe.db.get_value(
                 "Website User",
                 {"email": website_user_email},
-                [
-                    "name",
-                    "full_name",
-                    "email",
-                ],
+                ["name", "full_name", "email"],
             )
+            website_roles = frappe.get_all(
+                "Roles Table", filters={"parent": website_user_email}, fields=["roles"]
+            )
+            print("website_roles", website_roles)
             if website_user:
                 name, full_name, email = website_user
                 user = register_real_user(
                     full_name=full_name,
                     email=email,
                     phone_number=number,
+                    roles=website_roles,
                 )
                 if not isinstance(user, dict) or user.get("success") is False:
                     frappe.response["http_status_code"] = 400
@@ -832,7 +650,7 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
 
 # <---------------- Mobile SMS OTP Vefify for Login ---------------->
 
-
+# Api 6
 @frappe.whitelist(allow_guest=True)
 def send_sms_otp_for_mobile_login(number):
     """
@@ -984,7 +802,7 @@ def send_sms_otp_for_mobile_login(number):
             "message": "An unexpected error occurred while sending OTP. Please try again later."
         }
 
-
+# Api 7
 @frappe.whitelist(allow_guest=True)
 def verify_sms_otp_for_mobile_login(number, otp):
     """Verifies the last OTP stored in the SMS OTP document within 5 minutes."""
@@ -1036,15 +854,15 @@ def verify_sms_otp_for_mobile_login(number, otp):
 
         # Fetch website user details
         website_users = frappe.get_all(
-            "Website User",
-            filters={"mobile_no": number},
+            "User",
+            filters={"phone": number},
             fields=[
                 "name",
                 "full_name",
-                "mobile_no",
-                "email_verified",
-                "number_verified",
-                "user",
+                "phone",
+                # "email_verified",
+                # "number_verified",
+                # "user",
             ],
         )
         for user in website_users:
@@ -1052,7 +870,9 @@ def verify_sms_otp_for_mobile_login(number, otp):
             user["user_summary"] = (
                 get_user_summary(user_email) if user_email else "None"
             )
-
+        # website_users.number_verified = 1 if website_users.phone else 0
+        # website_users.email_verified = 1 if website_users.name else 0
+        # website_users.user = website_users.name if website_users.name else 0
         if not website_users:
             frappe.response["http_status_code"] = 404
             return {
@@ -1080,7 +900,7 @@ def verify_sms_otp_for_mobile_login(number, otp):
         frappe.response["http_status_code"] = 500
         return {"success": False, "message": "An unexpected error occurred."}
 
-
+# Api 8
 @frappe.whitelist(allow_guest=True)
 def mobile_verified_email_login(email, number, uuid=None):
     """
@@ -1176,7 +996,7 @@ def mobile_verified_email_login(email, number, uuid=None):
         frappe.log_error(f"Error logging in with email: {str(e)}", "Email Login Error")
         return {"message": "An error occurred while logging in with email"}
 
-
+# Api 9
 @frappe.whitelist(allow_guest=True)
 def login_with_google(code, uuid=None):
     """
@@ -1203,7 +1023,7 @@ def login_with_google(code, uuid=None):
         email = userinfo.get("email", "papajikatsa@gmail.com")
         first_name = userinfo.get("given_name", "vishal11")
         last_name = userinfo.get("family_name", "Kumar")
-        image_url = "" #userinfo.get("picture", "default_image_url.jpg")
+        image_url = ""  # userinfo.get("picture", "default_image_url.jpg")
 
         # email = "papajikatsa@gmail.com"
         # first_name = "vishal11"
@@ -1331,12 +1151,7 @@ def login_with_google(code, uuid=None):
         )
         return {"message": "An error occurred while logging in with Google"}
 
-
-"""
-EMAIL LOGIN
-"""
-
-
+# Api 10
 @frappe.whitelist(allow_guest=True)
 def send_email_otp(email):
     """
@@ -1388,7 +1203,7 @@ def send_email_otp(email):
         frappe.log_error(f"Unexpected error: {e}", "Send Email OTP Error")
         return "An error occurred while sending the OTP. Please try again."
 
-
+# Api 11
 @frappe.whitelist(allow_guest=True)
 def verify_email_otp(email, otp, uuid=None, need_login=False):
     try:
@@ -1475,54 +1290,7 @@ def verify_email_otp(email, otp, uuid=None, need_login=False):
         frappe.local.response.http_status_code = 500
         return "An unexpected error occurred. Please contact support."
 
-
-def get_user_summary(email):
-    """
-    Fetches user summary details. Handles cases where the User document does not exist.
-    """
-    try:
-        email = str(email).strip().lower()
-        if not frappe.db.exists("User", email):
-            return {
-                "avatar": None,
-                "total_invoices": 0,
-                "last_invoice_date": None,
-                "fundraiser": 0,
-                "message": f"User {email} does not exist in the User table.",
-            }
-
-        user = frappe.get_doc("User", email)
-        avatar = user.user_image
-        data = get_details_of_donor_donations(email)
-
-        fundraiser = frappe.db.count(
-            "Project", {"project_type": "Fundraiser", "owner": email}
-        )
-
-        return {
-            "avatar": avatar,
-            "total_invoices": data.get("total_invoices"),
-            "last_invoice_date": data.get("last_invoice_date"),
-            "fundraiser": fundraiser,
-        }
-
-    except Exception as e:
-        frappe.log_error(
-            message=f"Error fetching user summary for email {email}: {e}",
-            title="Get User Summary Error",
-        )
-        return {
-            "avatar": None,
-            "total_invoices": 0,
-            "last_invoice_date": None,
-            "fundraiser": 0,
-            "message": "An error occurred while fetching user summary.",
-        }
-
-
-""" Send Mail for Reset Password"""
-
-
+# Api 12
 @frappe.whitelist(allow_guest=True)
 def forgot_password(email):
     """
@@ -1575,61 +1343,4 @@ def forgot_password(email):
         }
 
 
-def send_reset_password_email(email, link):
-    try:
-        frappe.sendmail(
-            recipients=email,
-            subject=f"Reset Your Password on SocialAngel",
-            message=f"Click on the link to reset your password: {link}",
-            now=True,
-        )
-        return {
-            "success": True,
-            "message": f"Reset link sent to your email address: {email}",
-        }
-    except Exception as e:
-        frappe.log_error(
-            message=f"Error sending reset password email: {str(e)}",
-            title="Reset Password Email Error",
-        )
-        frappe.response.http_status_code = 500
-        return {
-            "success": False,
-            "message": f"An error occurred while sending the email. {str(e)}",
-        }
 
-
-@frappe.whitelist(allow_guest=True)
-def reset_password(key, new_password):
-    """
-    Reset the password of the user with the given reset key.
-    """
-    try:
-        user = frappe.db.get_value(
-            "User",
-            {"reset_password_key": frappe.utils.data.sha256_hash(key)},
-            "name",
-        )
-        if not user:
-            return {"status": "failed", "message": "Invalid or expired reset key"}
-
-        user_doc = frappe.get_doc("User", user)
-        user_doc.new_password = new_password
-        user_doc.reset_password_key = ""
-        user_doc.last_reset_password_key_generated_on = None
-        user_doc.otp_verified = 1
-        user_doc.save(ignore_permissions=True)
-        frappe.db.commit()
-
-        return {"status": "success", "message": "Password reset successfully"}
-
-    except Exception as e:
-        frappe.log_error(
-            message=f"Reset Password Error: Key={key}, Error={str(e)}",
-            title="Reset Password Error",
-        )
-        frappe.response.http_status_code = 500
-        return {
-            "status": "failed",
-            "message": "An error occurred while processing your request",
-        }
