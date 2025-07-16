@@ -879,8 +879,6 @@ def verify_sms_otp_for_mobile_login(number, otp):
                 "success": False,
                 "message": "Website User not found for the provided phone number.",
             }
-        frappe.db.set_value("Website User", {"mobile_no": number}, "number_verified", 1)
-        frappe.db.commit()
         frappe.response["http_status_code"] = 200
         return {
             "success": True,
