@@ -1,7 +1,5 @@
 import jwt
 import frappe
-from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
-from frappe.auth import LoginManager
 import datetime
 from frappe import _
 
@@ -39,8 +37,8 @@ def generate_jwt_token(user, expires_in=60):
         "time_zone": getattr(user_doc, "time_zone", None),
         "ip_address": frappe.local.request_ip or None,
         "device": frappe.local.request.headers.get("User-Agent", None),
-        "iat": datetime.datetime.utcnow(),
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in),
+        "iat": datetime.utcnow(),
+        "exp": datetime.utcnow() + datetime.timedelta(seconds=expires_in),
         "custom_data": {
             "flag": "jwt_frappe1",
             "extra": "your_custom_info"

@@ -12,7 +12,6 @@ import frappe, random
 from datetime import timedelta
 from frappe.utils import get_url, random_string, now_datetime, add_to_date
 from requests import RequestException
-from socialangel.api.donor import get_details_of_donor_donations
 
 # from frappe.utils.password import hash_password
 from frappe.utils.password import passlibctx
@@ -584,7 +583,6 @@ def verify_sms_otp_login(number, otp, website_user_email=None):
             website_roles = frappe.get_all(
                 "Roles Table", filters={"parent": website_user_email}, fields=["roles"]
             )
-            print("website_roles", website_roles)
             if website_user:
                 name, full_name, email = website_user
                 user = register_real_user(

@@ -1,13 +1,8 @@
-import random
-
 import frappe
-import jwt
 from frappe import _
 from frappe.auth import LoginManager
 from frappe.utils import cint, get_url, get_datetime
-from frappe.utils.password import check_password, passlibctx, update_password
-import jwt
-import datetime
+from frappe.utils.password import check_password
 from jwt_frappe.utils.jwt_auth import generate_jwt_token
 
 

@@ -1,18 +1,5 @@
 import frappe
-import jwt
-from frappe import _
-from frappe.utils import get_url
-from frappe.auth import LoginManager
-from jwt_frappe.utils.auth import get_bearer_token
-from jwt_frappe.utils.jwt_auth import generate_jwt_token
-from jwt_frappe.utils.jwt_auth import decode_jwt_token
-from frappe.utils import cint
-import requests, re
-import frappe, random
-from datetime import timedelta
-from frappe.utils import get_url, random_string, now_datetime, add_to_date
-from requests import RequestException
-
+ 
 
 # 
 # <---------------- Check Email Existence ---------------->

@@ -1,23 +1,10 @@
 import frappe
-import jwt
 from frappe import _
-from frappe.utils import get_url
-from frappe.auth import LoginManager
-from jwt_frappe.utils.auth import get_bearer_token
-from jwt_frappe.utils.jwt_auth import generate_jwt_token
-from jwt_frappe.utils.jwt_auth import decode_jwt_token
-from frappe.utils import cint
 import requests, re
-import frappe, random
-from datetime import timedelta
-from frappe.utils import get_url, random_string, now_datetime, add_to_date
+from frappe.utils import now_datetime, add_to_date
 from requests import RequestException
-from socialangel.api.donor import get_details_of_donor_donations
-
-# from frappe.utils.password import hash_password
-from frappe.utils.password import passlibctx
 from jwt_frappe.utils.constants import EMAIL_REGEX
-from jwt_frappe.domain.auth_domain import generateOTP ,register_real_user,login_jwt_without_password ,get_user_summary ,get_user_summary, send_reset_password_email ,reset_password
+from jwt_frappe.domain.auth_domain import generate_otp ,get_user_summary
 
 
 
@@ -111,7 +98,7 @@ def send_sms_otp_for_mobile_login(number):
             }
 
         # Generate OTP
-        otp = generateOTP(4)
+        otp = generate_otp(4)
         if not number:
             frappe.response.http_status_code = 400
             return {"success": False, "message": "Phone number is required."}

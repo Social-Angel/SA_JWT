@@ -7,7 +7,7 @@ from frappe.utils import get_url, random_string, now_datetime, add_to_date
 from socialangel.api.utils import create_lead
 from socialangel.api.auths.utils import create_website_user ,send_otp_to_number ,generateOTP
 from datetime import datetime, timedelta
-from socialangel.api.donor import get_details_of_donor_donations
+# from socialangel.api.donor import get_details_of_donor_donations
 from frappe.core.doctype.user.user import test_password_strength
 
 

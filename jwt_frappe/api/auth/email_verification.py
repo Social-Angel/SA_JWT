@@ -1,11 +1,9 @@
-import frappe, random
-from frappe.auth import LoginManager, CookieManager
+import frappe
 from frappe.utils import now_datetime
-import requests, re
+import re
 from frappe.utils import now_datetime, add_to_date
-from datetime import datetime, timedelta
 from frappe import _
-from jwt_frappe.domain.auth_domain import generateOTP ,register_real_user,login_jwt_without_password ,get_user_summary ,get_user_summary, send_reset_password_email ,reset_password
+from jwt_frappe.domain.auth_domain import generate_otp ,login_jwt_without_password 
 
 
 
@@ -46,7 +44,7 @@ def send_complete_email_otp(email):
         else:
             website_user_doc = frappe.get_doc("Website User", email)
 
-        generated_otp = generateOTP(4)
+        generated_otp = generate_otp(4)
 
         otp_doc = frappe.new_doc("SMS OTP")
         otp_doc.update({"email": email, "otp": generated_otp, "status": "Sent"})
