@@ -18,7 +18,7 @@ from frappe.utils.password import passlibctx
 from jwt_frappe.utils.constants import EMAIL_REGEX
 from jwt_frappe.domain.auth_domain import generate_otp ,register_real_user,login_jwt_without_password ,get_user_summary ,get_user_summary, send_reset_password_email ,reset_password
 
-
+ 
 # True 
 # Api 1
 @frappe.whitelist(allow_guest=True)

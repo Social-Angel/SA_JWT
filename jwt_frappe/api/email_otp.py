@@ -8,7 +8,7 @@ from frappe import _
 from .auth import login_jwt_without_password
 
 
-def generateOTP(digit):
+def generate_otp(digit):
     """
     Generates a random OTP of the specified digit length.
     """
@@ -50,7 +50,7 @@ def email_otp_sender(email):
         else:
             user_doc = frappe.get_doc("User", email)
 
-        generated_otp = generateOTP(4)
+        generated_otp = generate_otp(4)
 
         otp_doc = frappe.new_doc("SMS OTP")
         otp_doc.update({"email": email, "otp": generated_otp, "status": "Sent"})
@@ -189,7 +189,7 @@ def send_complete_email_otp(email):
         else:
             website_user_doc = frappe.get_doc("Website User", email)
 
-        generated_otp = generateOTP(4)
+        generated_otp = generate_otp(4)
 
         otp_doc = frappe.new_doc("SMS OTP")
         otp_doc.update({"email": email, "otp": generated_otp, "status": "Sent"})
