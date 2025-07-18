@@ -5,7 +5,7 @@ from frappe.utils import cint, get_url, get_datetime
 from frappe.utils.password import check_password
 from jwt_frappe.utils.jwt_auth import generate_jwt_token
 
-
+from datetime import datetime
 def get_linked_user(id_type, id):
     """
     Returns the user associated with the details

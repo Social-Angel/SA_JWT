@@ -16,7 +16,7 @@ from requests import RequestException
 # from frappe.utils.password import hash_password
 from frappe.utils.password import passlibctx
 from jwt_frappe.utils.constants import EMAIL_REGEX
-from jwt_frappe.domain.auth_domain import generateOTP ,register_real_user,login_jwt_without_password ,get_user_summary ,get_user_summary, send_reset_password_email ,reset_password
+from jwt_frappe.domain.auth_domain import generate_otp ,register_real_user,login_jwt_without_password ,get_user_summary ,get_user_summary, send_reset_password_email ,reset_password
 
 
 # True 
@@ -433,7 +433,7 @@ def send_sms_otp(number, website_user):
                 "message": "An error occurred while updating mobile OTP attempts.",
             }
 
-        otp = generateOTP(4)
+        otp = generate_otp(4)
         if not number:
             frappe.response.http_status_code = 400
             return {"success": False, "message": "Phone number is required."}
@@ -736,7 +736,7 @@ def send_sms_otp_for_mobile_login(number):
             }
 
         # Generate OTP
-        otp = generateOTP(4)
+        otp = generate_otp(4)
         if not number:
             frappe.response.http_status_code = 400
             return {"success": False, "message": "Phone number is required."}
@@ -1170,7 +1170,7 @@ def send_email_otp(email):
         else:
             user_doc = frappe.get_doc("User", email)
 
-        generated_otp = generateOTP(4)
+        generated_otp = generate_otp(4)
 
         otp_doc = frappe.new_doc("SMS OTP")
         otp_doc.update({"email": email, "otp": generated_otp, "status": "Sent"})

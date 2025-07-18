@@ -2,7 +2,7 @@ import jwt
 import frappe
 import datetime
 from frappe import _
-
+from datetime import datetime, timedelta  # Import timedelta explicitly
 
 
 
@@ -38,7 +38,7 @@ def generate_jwt_token(user, expires_in=60):
         "ip_address": frappe.local.request_ip or None,
         "device": frappe.local.request.headers.get("User-Agent", None),
         "iat": datetime.utcnow(),
-        "exp": datetime.utcnow() + datetime.timedelta(seconds=expires_in),
+        "exp": datetime.utcnow() + timedelta(seconds=expires_in),
         "custom_data": {
             "flag": "jwt_frappe1",
             "extra": "your_custom_info"
