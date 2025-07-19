@@ -5,7 +5,7 @@ from jwt_frappe.utils.auth import get_bearer_token
 import requests
 from jwt_frappe.utils.constants import EMAIL_REGEX
 from jwt_frappe.domain.auth_domain import login_jwt_without_password 
-
+import re
 
 
 
@@ -27,7 +27,19 @@ def login_jwt(usr, pwd, uuid=None, expires_in=60, expire_on=None, device=None):
         if not usr:
             frappe.response["http_status_code"] = 400
             return {"Success": False, "message": _("Username is required")}
-
+        if not re.match(EMAIL_REGEX, usr):
+            frappe.log_error(
+                message=f"Invalid email format: {usr.lower()}",
+                title="User Creation Error",
+            )
+            frappe.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": _(
+                    "Invalid email format. Please provide a valid email address."
+                ),
+            }
         user_doc = frappe.get_doc("User", usr)
         if not user_doc.enabled:
             raise frappe.ValidationError(_("User is disabled"))

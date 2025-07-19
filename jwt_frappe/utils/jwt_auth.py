@@ -3,14 +3,19 @@ import frappe
 import datetime
 from frappe import _
 from datetime import datetime, timedelta  # Import timedelta explicitly
-
+from frappe.utils.password import decrypt  # Import decrypt for password encryption
 
 
 @frappe.whitelist(allow_guest=True)
 def generate_jwt_token(user, expires_in=60):
 
-    jwt_secret_key = frappe.local.conf.jwt_secret_key
+    jwt_secret_key = frappe.db.get_single_value("SocialAngel Setting" ,"jwt_secret_key")
     if not jwt_secret_key:
+        frappe.log_error(message="JWT Secret Key is not configured. Add jwt_secret_key in site config.json", title="JWT Configuration Error")
+        raise frappe.ValidationError(_("JWT Secret Key is not configured."))
+    
+    decrypt_jwt_secret_key = decrypt(jwt_secret_key)
+    if not decrypt_jwt_secret_key:
         frappe.log_error(message="JWT Secret Key is not configured. Add jwt_secret_key in site config.json", title="JWT Configuration Error")
         raise frappe.ValidationError(_("JWT Secret Key is not configured."))
     
@@ -45,15 +50,20 @@ def generate_jwt_token(user, expires_in=60):
         }
     }
 
-    token = jwt.encode(payload, jwt_secret_key, algorithm="HS256")
+    token = jwt.encode(payload, decrypt_jwt_secret_key, algorithm="HS256")
     return token
 
 
 @frappe.whitelist(allow_guest=True)
 def decode_jwt_token(token, token_type , secret_key="your_secret_here"):
     try:
-        jwt_secret_key = frappe.local.conf.jwt_secret_key
+        jwt_secret_key = frappe.db.get_single_value("SocialAngel Setting" ,"jwt_secret_key")
         if not jwt_secret_key:
+            frappe.log_error(message="JWT Secret Key is not configured. Add jwt_secret_key in site config.json", title="JWT Configuration Error")
+            raise frappe.ValidationError(_("JWT Secret Key is not configured."))
+    
+        decrypt_jwt_secret_key = decrypt(jwt_secret_key)
+        if not decrypt_jwt_secret_key:
             frappe.log_error(message="JWT Secret Key is not configured. Add jwt_secret_key in site config.json", title="JWT Configuration Error")
             raise frappe.ValidationError(_("JWT Secret Key is not configured."))
 
@@ -65,9 +75,9 @@ def decode_jwt_token(token, token_type , secret_key="your_secret_here"):
         except frappe.DoesNotExistError:
             return {"success": False, "message": "Token not found"}
         if token_type == "refresh_token":
-            decoded = jwt.decode(access_token.jwt_refresh_token, jwt_secret_key, algorithms=["HS256"])
+            decoded = jwt.decode(access_token.jwt_refresh_token, decrypt_jwt_secret_key, algorithms=["HS256"])
         elif token_type == "access_token":
-            decoded = jwt.decode(access_token.jwt_access_token, jwt_secret_key, algorithms=["HS256"])
+            decoded = jwt.decode(access_token.jwt_access_token, decrypt_jwt_secret_key, algorithms=["HS256"])
         else:
             return {
                 {"success": False, "message": "Token Type Is Wrong"}

@@ -3,7 +3,7 @@ from frappe import _
 from frappe.utils import now_datetime
 from jwt_frappe.utils.constants import EMAIL_REGEX
 from jwt_frappe.domain.auth_domain import send_reset_password_email 
-
+import re
 
 
 # Api 12
@@ -14,6 +14,19 @@ def forgot_password(email):
     """
     try:
         email = str(email).strip().lower()
+        if not re.match(EMAIL_REGEX, email):
+            frappe.log_error(
+                message=f"Invalid email format: {email.lower()}",
+                title="User Creation Error",
+            )
+            frappe.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": _(
+                    "Invalid email format. Please provide a valid email address."
+                ),
+            }
         user = frappe.db.get_value("User", {"email": email}, "name")
         if not user:
             return {"status": "failed", "message": "User not found with this email"}

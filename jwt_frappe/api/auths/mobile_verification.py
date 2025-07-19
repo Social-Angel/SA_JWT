@@ -3,8 +3,9 @@ from frappe import _
 import requests, re
 from frappe.utils import now_datetime, add_to_date
 from requests import RequestException
-from jwt_frappe.utils.constants import EMAIL_REGEX
+from jwt_frappe.utils.constants import  PHONE_REGEX
 from jwt_frappe.domain.auth_domain import generate_otp ,get_user_summary
+from frappe.utils.password import decrypt
 
 
 
@@ -22,7 +23,18 @@ def send_sms_otp_for_mobile_login(number):
         if not number:
             frappe.response.http_status_code = 400
             return {"success": False, "message": "Phone number is required."}
-
+        
+        if not re.match(PHONE_REGEX, number):
+            frappe.log_error(
+                message=f"Invalid phone number format: {number}",
+                title="User Creation Error",
+            )
+            frappe.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": _("Invalid phone number format. Please provide a valid phone number."),
+            }
         # Check number in website user
         website_user = frappe.db.get_value(
             "Website User", filters={"mobile_no": number}, fieldname=["name"]
@@ -124,7 +136,7 @@ def send_sms_otp_for_mobile_login(number):
 
         if response.status_code == 200 and "SUBMIT_SUCCESS" in response_text:
             frappe.get_doc(
-                {"doctype": "SMS OTP", "number": number, "otp": otp, "status": "Sent"}
+                {"doctype": "SMS OTP", "number": number, "status": "Sent"}
             ).insert(ignore_permissions=True)
 
             frappe.db.commit()
@@ -169,15 +181,24 @@ def verify_sms_otp_for_mobile_login(number, otp):
     try:
         number = str(number).strip()
         otp = str(otp).strip()
+        
         # Check if the number is provided
         if not number:
             frappe.response["http_status_code"] = 400
             return {"success": False, "message": "Phone number is required."}
 
         # Validate the phone number format
-        if not re.match(r"^\+?[0-9]{10,15}$", number):
-            frappe.response["http_status_code"] = 400
-            return {"success": False, "message": "Invalid phone number format."}
+        if not re.match(PHONE_REGEX, number):
+            frappe.log_error(
+                message=f"Invalid phone number format: {number}",
+                title="User Creation Error",
+            )
+            frappe.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": _("Invalid phone number format. Please provide a valid phone number."),
+            }
 
         # Check if the document exists
         if not frappe.db.exists("SMS OTP", {"number": number}):
@@ -203,9 +224,9 @@ def verify_sms_otp_for_mobile_login(number, otp):
                 "success": False,
                 "message": "OTP expired. Please request a new one.",
             }
-
+        decrypted_otp = decrypt(otp_doc.otp)
         # Validate OTP
-        if otp_doc.otp != str(otp):
+        if otp != decrypted_otp:
             frappe.response["http_status_code"] = 400
             return {"success": False, "message": "Invalid OTP."}
 

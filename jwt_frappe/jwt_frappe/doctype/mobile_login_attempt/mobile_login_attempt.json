@@ -16,7 +16,9 @@
   {
    "fieldname": "mobile_number",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Mobile Number",
+   "read_only": 1,
    "unique": 1
   },
   {
@@ -31,19 +33,21 @@
   {
    "fieldname": "last_attempt_time",
    "fieldtype": "Datetime",
-   "label": "Last Attempt Time"
+   "label": "Last Attempt Time",
+   "read_only": 1
   },
   {
    "default": "0",
    "fieldname": "is_blocked",
    "fieldtype": "Check",
-   "label": "Is blocked"
+   "label": "Is blocked",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-06-17 14:02:53.351936",
+ "modified": "2025-07-19 16:38:42.184691",
  "modified_by": "Administrator",
  "module": "Jwt Frappe",
  "name": "Mobile Login Attempt",

@@ -4,7 +4,9 @@ import re
 from frappe.utils import now_datetime, add_to_date
 from frappe import _
 from jwt_frappe.domain.auth_domain import generate_otp ,login_jwt_without_password 
-
+from frappe.utils.password import decrypt
+from jwt_frappe.utils.constants import EMAIL_REGEX
+import re
 
 
 
@@ -26,12 +28,18 @@ def send_complete_email_otp(email):
                 "message": "Email address is required.",
             }
 
-        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-            frappe.local.response.http_status_code = 400
+        if not re.match(EMAIL_REGEX, email):
+            frappe.log_error(
+                message=f"Invalid email format: {email.lower()}",
+                title="User Creation Error",
+            )
+            frappe.response.http_status_code = 403
             return {
                 "status": "error",
                 "data": None,
-                "message": "Invalid email address format.",
+                "message": _(
+                    "Invalid email format. Please provide a valid email address."
+                ),
             }
 
         if not frappe.db.exists("Website User", email):
@@ -87,8 +95,21 @@ def complete_email_login(email, otp, for_login =False , uuid=None):
     try:
         otp = str(otp).strip()
         email = str(email).strip().lower()
+        if not re.match(EMAIL_REGEX, email):
+            frappe.log_error(
+                message=f"Invalid email format: {email.lower()}",
+                title="User Creation Error",
+            )
+            frappe.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": _(
+                    "Invalid email format. Please provide a valid email address."
+                ),
+            }
         frappe.set_user("Administrator")
-        if not frappe.db.exists("SMS OTP", {"email": email, "otp": otp}):
+        if not frappe.db.exists("SMS OTP", {"email": email, "status": "Sent"}):
             frappe.local.response.http_status_code = 403
             return {
                 "status": "error",
@@ -104,7 +125,7 @@ def complete_email_login(email, otp, for_login =False , uuid=None):
             }
 
         stored_otp = frappe.get_last_doc(
-            "SMS OTP", filters={"email": email, "otp": otp, "status": "Sent"}
+            "SMS OTP", filters={"email": email, "status": "Sent"}
         )
 
         if stored_otp.creation < add_to_date(now_datetime(), minutes=-5):
@@ -114,7 +135,14 @@ def complete_email_login(email, otp, for_login =False , uuid=None):
                 "data": None,
                 "message": "OTP expired. Please request a new one.",
             }
-
+        decrypted_otp = decrypt(stored_otp.otp)
+        if decrypted_otp != otp:
+            frappe.local.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": "Invalid OTP. Please try again.",
+            }
         website_user = frappe.get_doc("Website User", email.lower())
 
         if not website_user.user:
@@ -127,7 +155,7 @@ def complete_email_login(email, otp, for_login =False , uuid=None):
                     "phone": website_user.phone,
                     "gender": website_user.gender,
                     "birth_date": website_user.dob,
-                    "send_welcome_email": 1,
+                    "send_welcome_email": 0,
                 }
             )
             user.save(ignore_permissions=True)
@@ -234,9 +262,22 @@ def complete_email_login(email, otp, for_login =False , uuid=None):
 def complete_email_verify_login(email, otp, uuid=None):
     try:
         otp = str(otp).strip()
+        
         email = str(email).strip().lower()
-        frappe.set_user("Administrator")
-        if not frappe.db.exists("SMS OTP", {"email": email, "otp": otp}):
+        if not re.match(EMAIL_REGEX, email):
+            frappe.log_error(
+                message=f"Invalid email format: {email.lower()}",
+                title="User Creation Error",
+            )
+            frappe.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": _(
+                    "Invalid email format. Please provide a valid email address."
+                ),
+            }
+        if not frappe.db.exists("SMS OTP", {"email": email, "status": "Sent"}):
             frappe.local.response.http_status_code = 403
             return {
                 "status": "error",
@@ -252,7 +293,7 @@ def complete_email_verify_login(email, otp, uuid=None):
             }
 
         stored_otp = frappe.get_last_doc(
-            "SMS OTP", filters={"email": email, "otp": otp, "status": "Sent"}
+            "SMS OTP", filters={"email": email,"status": "Sent"}
         )
 
         if stored_otp.creation < add_to_date(now_datetime(), minutes=-5):
@@ -262,7 +303,14 @@ def complete_email_verify_login(email, otp, uuid=None):
                 "data": None,
                 "message": "OTP expired. Please request a new one.",
             }
-
+        decrypted_otp = decrypt(stored_otp.otp)
+        if otp != decrypted_otp:
+            frappe.local.response.http_status_code = 403
+            return {
+                "status": "error",
+                "data": None,
+                "message": "Invalid OTP. Please try again.",
+            }
         website_user = frappe.get_doc("Website User", email.lower())
         
         if not website_user.mobile_no:
